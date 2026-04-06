@@ -12,7 +12,7 @@ export default function LogsPage() {
   const [error,   setError]   = useState('');
   const [filters, setFilters] = useState({ type: '', status: '', section: '', jobId: '', search: '' });
   const [page,    setPage]    = useState(0);
-  const LIMIT = 100;
+  const LIMIT = 25;
 
   const load = useCallback(async (pg = 0) => {
     setLoading(true); setError('');
@@ -53,8 +53,11 @@ export default function LogsPage() {
           <p style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>Full send history — {total} total records</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {filters.jobId && hasFailed && (
-            <button className="btn btn-outline" onClick={handleResend} style={{ color: '#f59e0b', borderColor: '#f59e0b' }}>
+          {hasFailed && (
+            <button className="btn btn-outline" onClick={handleResend}
+              disabled={!filters.jobId}
+              title={filters.jobId ? 'Resend all failed emails for this job' : 'Enter a Job ID above to enable resend'}
+              style={{ color: '#f59e0b', borderColor: '#f59e0b', opacity: filters.jobId ? 1 : 0.45 }}>
               <RefreshCw size={14} /> Resend Failed
             </button>
           )}
@@ -136,32 +139,33 @@ export default function LogsPage() {
       </div>
 
       {/* Pagination */}
-      {total > LIMIT && (() => {
-        const totalPages = Math.ceil(total / LIMIT);
-        // Build page windows: first, last, current±2, with ellipsis
+      {(() => {
+        const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+        // Build page window: first, last, current±2, with ellipsis
         const pageNums = [];
         for (let i = 0; i < totalPages; i++) {
           if (i === 0 || i === totalPages - 1 || Math.abs(i - page) <= 2) {
             pageNums.push(i);
           }
         }
-        // Insert ellipsis markers
         const items = [];
         pageNums.forEach((p, idx) => {
           if (idx > 0 && p - pageNums[idx - 1] > 1) items.push('...');
           items.push(p);
         });
+        const start = total === 0 ? 0 : page * LIMIT + 1;
+        const end   = Math.min((page + 1) * LIMIT, total);
 
         return (
           <div style={{ display: 'flex', gap: 6, marginTop: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 13 }}
+            <button className="btn btn-ghost" style={{ padding: '5px 10px', fontSize: 13 }}
               disabled={page === 0} onClick={() => load(0)}>«</button>
             <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 13 }}
               disabled={page === 0} onClick={() => load(page - 1)}>‹ Prev</button>
 
             {items.map((item, idx) =>
               item === '...'
-                ? <span key={`ellipsis-${idx}`} style={{ padding: '5px 4px', color: '#94a3b8', fontSize: 13 }}>…</span>
+                ? <span key={`el-${idx}`} style={{ padding: '5px 4px', color: '#94a3b8', fontSize: 13 }}>…</span>
                 : (
                   <button key={item} onClick={() => load(item)}
                     className={item === page ? 'btn btn-primary' : 'btn btn-ghost'}
@@ -173,11 +177,12 @@ export default function LogsPage() {
 
             <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 13 }}
               disabled={(page + 1) * LIMIT >= total} onClick={() => load(page + 1)}>Next ›</button>
-            <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 13 }}
+            <button className="btn btn-ghost" style={{ padding: '5px 10px', fontSize: 13 }}
               disabled={(page + 1) * LIMIT >= total} onClick={() => load(totalPages - 1)}>»</button>
 
-            <span style={{ marginLeft: 6, fontSize: 12, color: '#64748b' }}>
-              {page * LIMIT + 1}–{Math.min((page + 1) * LIMIT, total)} of {total} records
+            <span style={{ marginLeft: 8, fontSize: 12, color: '#64748b' }}>
+              {total === 0 ? 'No records' : `${start}–${end} of ${total} records`}
+              &nbsp;·&nbsp; {LIMIT} per page
             </span>
           </div>
         );
