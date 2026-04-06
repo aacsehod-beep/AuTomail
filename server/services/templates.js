@@ -198,11 +198,37 @@ function renderFeeReminderHtml({ ctx, feeDetails }) {
   return { html: wrapEmail(inner, 'For fee queries, contact the accounts office.'), text: stripHtml(inner) };
 }
 
+// ─── Certificate Mail ──────────────────────────────────────────────────────────
+function renderCertificateHtml({ ctx, body }) {
+  const bodyHtml = body
+    ? fillTemplate(body, ctx).replace(/\n/g, '<br>')
+    : `Dear <strong>${escapeHtml(ctx.Name)}</strong>,<br><br>
+       Congratulations! Please find your certificate attached to this email.<br><br>
+       We wish you continued success.`;
+
+  const inner = `
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="display:inline-block;background:linear-gradient(135deg,#0f766e,#0d9488);border-radius:50%;width:64px;height:64px;line-height:64px;font-size:32px;margin-bottom:12px">🎓</div>
+      <h2 style="margin:0;font-size:20px;color:#0f766e;font-weight:700">Certificate of Achievement</h2>
+    </div>
+    <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:20px 24px;margin-bottom:20px;font-size:14px;color:#334155;line-height:1.8">
+      ${bodyHtml}
+    </div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 20px;font-size:12px;color:#64748b">
+      <strong>Student:</strong> ${escapeHtml(ctx.Name)} &nbsp;|&nbsp;
+      <strong>Roll No:</strong> ${escapeHtml(ctx.RegNo || '—')} &nbsp;|&nbsp;
+      <strong>Section:</strong> ${escapeHtml(ctx.Section || '—')}
+    </div>`;
+
+  return { html: wrapEmail(inner, 'This certificate was issued by Aurora University.'), text: stripHtml(inner) };
+}
+
 module.exports = {
   renderAttendanceHtml,
   renderCircularHtml,
   renderCustomHtml,
   renderFeeReminderHtml,
+  renderCertificateHtml,
   fillTemplate,
   escapeHtml,
   stripHtml,

@@ -1,20 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
 import { api, sseProgress } from '../api';
-import { Mail, Loader2, Send, Users, Save, Paperclip, X, FileText } from 'lucide-react';
+import { Mail, Loader2, Send, Users, Save, Paperclip, X, FileText, Award } from 'lucide-react';
 import FileUpload      from '../components/FileUpload';
 import SectionSelector from '../components/SectionSelector';
 import ProgressPanel   from '../components/ProgressPanel';
 
 const MAIL_TYPES = [
-  { id: 'circular',     label: 'Circular',       color: '#1e40af' },
-  { id: 'announcement', label: 'Announcement',   color: '#92400e' },
-  { id: 'event',        label: 'Event Notice',   color: '#166534' },
-  { id: 'exam',         label: 'Exam Notice',    color: '#991b1b' },
-  { id: 'holiday',      label: 'Holiday Notice', color: '#5b21b6' },
-  { id: 'fee',          label: 'Fee Reminder',   color: '#9a3412' },
-  { id: 'fee_reminder', label: 'Fee Due Alert',  color: '#7c3aed' },
-  { id: 'general',      label: 'General',        color: '#374151' },
-  { id: 'custom',       label: 'Custom HTML',    color: '#0e7490' },
+  { id: 'circular',     label: 'Circular',           color: '#1e40af' },
+  { id: 'announcement', label: 'Announcement',       color: '#92400e' },
+  { id: 'event',        label: 'Event Notice',       color: '#166534' },
+  { id: 'exam',         label: 'Exam Notice',        color: '#991b1b' },
+  { id: 'holiday',      label: 'Holiday Notice',     color: '#5b21b6' },
+  { id: 'fee',          label: 'Fee Reminder',       color: '#9a3412' },
+  { id: 'fee_reminder', label: 'Fee Due Alert',      color: '#7c3aed' },
+  { id: 'general',      label: 'General',            color: '#374151' },
+  { id: 'custom',       label: 'Custom HTML',        color: '#0e7490' },
+  { id: 'certificate',  label: '🎓 Certificate Mail', color: '#0f766e' },
 ];
 
 const DEFAULT_MAPPING = { startRow: 9, nameCol: 2, emailCol: 4 };
@@ -33,11 +34,14 @@ export default function BulkMailPage() {
   const [mapping,    setMapping]    = useState(DEFAULT_MAPPING);
   const [templates,  setTemplates]  = useState([]);
   const [attachments, setAttachments] = useState([]);
+  const [certFiles,   setCertFiles]   = useState([]);   // Map filename→File for certificate mode
+  const [certMatchKey, setCertMatchKey] = useState('regNo'); // 'regNo' | 'name'
   const [job,        setJob]        = useState(null);
   const [loading,    setLoading]    = useState('');
   const [error,      setError]      = useState('');
   const cancelSse   = useRef(null);
   const attachRef   = useRef(null);
+  const certRef     = useRef(null);
 
   useEffect(() => {
     api.getTemplates().then(setTemplates).catch(() => {});
@@ -83,18 +87,52 @@ export default function BulkMailPage() {
     setAttachments(prev => prev.filter(f => f.name !== name));
   }
 
+  function handleCertFiles(e) {
+    const incoming = Array.from(e.target.files || []).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+    setCertFiles(prev => {
+      const names = new Set(prev.map(f => f.name));
+      return [...prev, ...incoming.filter(f => !names.has(f.name))];
+    });
+    e.target.value = '';
+  }
+
+  function removeCertFile(name) {
+    setCertFiles(prev => prev.filter(f => f.name !== name));
+  }
+
+  // How many cert files match loaded recipients
+  function certMatchCount() {
+    if (!certFiles.length || !recipients.length) return { matched: 0, total: recipients.length };
+    const certKeys = new Set(certFiles.map(f => f.name.replace(/\.pdf$/i, '').trim().toLowerCase()));
+    const matched = recipients.filter(r => {
+      const key = certMatchKey === 'regNo' ? (r.regNo || '').toLowerCase() : (r.name || '').toLowerCase();
+      return certKeys.has(key);
+    }).length;
+    return { matched, total: recipients.length };
+  }
+
   async function handleSend() {
-    if (!recipients.length || !subject) return setError('Subject and recipients are required.');
+    if (mailType === 'certificate') {
+      if (!recipients.length) return setError('Load recipients first.');
+      if (!certFiles.length) return setError('Upload at least one certificate PDF.');
+      const { matched } = certMatchCount();
+      if (matched === 0) return setError(`No certificates matched any recipient by ${certMatchKey === 'regNo' ? 'Roll Number' : 'Name'}. Check filenames.`);
+      if (!subject) return setError('Subject is required.');
+    } else {
+      if (!recipients.length || !subject) return setError('Subject and recipients are required.');
+    }
     setError(''); setJob(null);
     try {
       const payload = {
         type: mailType, subject, body, htmlBody,
         circularNo, feeDetails,
         recipients, mapping,
+        certMatchKey,
       };
       const form = new FormData();
       if (file) form.append('sheet', file);
       attachments.forEach(f => form.append('attachments', f));
+      certFiles.forEach(f => form.append('certFiles', f));
       form.append('payload', JSON.stringify(payload));
       const { jobId } = await api.startSend(form);
       setJob({ id: jobId, total: recipients.length, done: 0, sent: 0, failed: 0, status: 'Starting…', finished: false });
@@ -167,7 +205,7 @@ export default function BulkMailPage() {
           </div>
         </div>
 
-        {mailType !== 'fee_reminder' && (
+        {mailType !== 'fee_reminder' && mailType !== 'certificate' && (
           <div style={{ display: 'grid', gridTemplateColumns: circularNo !== undefined ? '1fr auto' : '1fr', gap: 14, marginBottom: 14 }}>
             <div className="form-group">
               <label className="form-label">Subject <span style={{ color: '#dc2626' }}>*</span></label>
@@ -185,7 +223,18 @@ export default function BulkMailPage() {
           </div>
         )}
 
-        {mailType === 'custom' ? (
+        {mailType === 'certificate' ? (
+          <CertificateCompose
+            subject={subject} onSubject={setSubject}
+            body={body} onBody={setBody}
+            certFiles={certFiles} certMatchKey={certMatchKey}
+            onMatchKey={setCertMatchKey}
+            onPickFiles={() => certRef.current?.click()}
+            onRemove={removeCertFile}
+            matchInfo={certMatchCount()}
+            recipients={recipients}
+          />
+        ) : mailType === 'custom' ? (
           <div className="form-group">
             <label className="form-label">Custom HTML Body</label>
             <textarea className="form-control" style={{ minHeight: 200, fontFamily: 'monospace', fontSize: 12 }}
@@ -204,8 +253,12 @@ export default function BulkMailPage() {
             <span style={{ fontSize: 11, color: '#94a3b8' }}>Plain text or basic HTML supported</span>
           </div>
         )}
+        {/* hidden cert file input */}
+        <input ref={certRef} type="file" accept=".pdf,application/pdf" multiple
+          style={{ display: 'none' }} onChange={handleCertFiles} />
 
-        {/* ── Attachments ── */}
+        {/* ── Common Attachments (not shown in certificate mode) ── */}
+        {mailType !== 'certificate' && (
         <div style={{ marginTop: 18, borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <label style={{ fontSize: 13, fontWeight: 700, color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -241,9 +294,8 @@ export default function BulkMailPage() {
             </div>
           )}
         </div>
+        )}
       </div>
-
-      {/* Recipients */}
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={sh3}>Step 3 — Select Recipients</h3>
         <FileUpload onFile={handleFile} label="Upload Student Sheet (.xlsx)" />
@@ -316,3 +368,91 @@ function FeeEditor({ rows, onRowChange, subject, onSubject }) {
 }
 
 const sh3 = { fontSize: 14, fontWeight: 700, color: '#1e3a8a', marginBottom: 16 };
+
+// ─── Certificate Compose Panel ────────────────────────────────────────────────
+function CertificateCompose({ subject, onSubject, body, onBody, certFiles, certMatchKey, onMatchKey, onPickFiles, onRemove, matchInfo, recipients }) {
+  return (
+    <div>
+      {/* Info banner */}
+      <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '12px 16px', marginBottom: 16, fontSize: 12, color: '#15803d' }}>
+        <strong style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><Award size={14} /> How Certificate Mail Works</strong>
+        Upload one PDF per student. Name each file exactly as the student's <strong>Roll Number</strong> (e.g., <code>21AU001.pdf</code>) or <strong>Name</strong> (e.g., <code>Sai Teja.pdf</code>).
+        The system automatically attaches only that student's certificate to their email. No match → that student is skipped.
+      </div>
+
+      {/* Subject */}
+      <div className="form-group" style={{ marginBottom: 14 }}>
+        <label className="form-label">Subject <span style={{ color: '#dc2626' }}>*</span></label>
+        <input className="form-control" value={subject} onChange={e => onSubject(e.target.value)}
+          placeholder="Your Certificate – {{Name}}" />
+        <span style={{ fontSize: 11, color: '#94a3b8' }}>Use {`{{Name}}`}, {`{{RegNo}}`} for personalisation</span>
+      </div>
+
+      {/* Body */}
+      <div className="form-group" style={{ marginBottom: 16 }}>
+        <label className="form-label">Email Message (optional)</label>
+        <textarea className="form-control" style={{ minHeight: 100 }} value={body} onChange={e => onBody(e.target.value)}
+          placeholder={`Dear {{Name}},\n\nPlease find attached your certificate. Congratulations!\n\nRegards,\nAurora University`} />
+      </div>
+
+      {/* Match key */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+        <label className="form-label" style={{ margin: 0, whiteSpace: 'nowrap' }}>Match PDF filename by:</label>
+        {['regNo', 'name'].map(k => (
+          <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+            <input type="radio" name="certMatchKey" value={k} checked={certMatchKey === k} onChange={() => onMatchKey(k)} />
+            {k === 'regNo' ? 'Roll Number  (e.g. 21AU001.pdf)' : 'Student Name  (e.g. Sai Teja.pdf)'}
+          </label>
+        ))}
+      </div>
+
+      {/* Upload zone */}
+      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#0f766e', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Award size={14} /> Certificate PDFs
+            {certFiles.length > 0 && <span style={{ fontWeight: 400, color: '#64748b', fontSize: 11 }}>({certFiles.length} uploaded)</span>}
+          </span>
+          <button type="button" className="btn btn-ghost" style={{ fontSize: 11, padding: '5px 12px' }} onClick={onPickFiles}>
+            <Paperclip size={13} /> Add PDFs
+          </button>
+        </div>
+
+        {/* Match summary badge */}
+        {certFiles.length > 0 && recipients.length > 0 && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '5px 12px', borderRadius: 99, marginBottom: 10, fontSize: 12, fontWeight: 600,
+            background: matchInfo.matched === 0 ? '#fef2f2' : matchInfo.matched < matchInfo.total ? '#fffbeb' : '#f0fdf4',
+            color:      matchInfo.matched === 0 ? '#dc2626' : matchInfo.matched < matchInfo.total ? '#b45309' : '#16a34a',
+            border: `1px solid ${matchInfo.matched === 0 ? '#fecaca' : matchInfo.matched < matchInfo.total ? '#fde68a' : '#bbf7d0'}`,
+          }}>
+            {matchInfo.matched === matchInfo.total ? '✓' : '⚠'}
+            {matchInfo.matched} / {matchInfo.total} recipients matched
+            {matchInfo.matched < matchInfo.total && matchInfo.matched > 0 && ` — ${matchInfo.total - matchInfo.matched} will be skipped`}
+          </div>
+        )}
+
+        {certFiles.length === 0 ? (
+          <p style={{ fontSize: 12, color: '#94a3b8', margin: 0 }}>No certificate PDFs uploaded yet.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 220, overflowY: 'auto' }}>
+            {certFiles.map(f => (
+              <div key={f.name} style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px',
+              }}>
+                <FileText size={14} style={{ color: '#0f766e', flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 12, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                <span style={{ fontSize: 11, color: '#94a3b8', flexShrink: 0 }}>{(f.size / 1024).toFixed(0)} KB</span>
+                <button type="button" onClick={() => onRemove(f.name)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 2, display: 'flex' }}>
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

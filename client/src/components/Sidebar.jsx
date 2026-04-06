@@ -1,6 +1,6 @@
-import { BarChart2, Send, TrendingUp, ClipboardList, FileText, Clock, GraduationCap } from 'lucide-react';
+import { BarChart2, Send, TrendingUp, ClipboardList, FileText, Clock, GraduationCap, LogOut, User } from 'lucide-react';
 
-export default function Sidebar({ current, onNavigate }) {
+export default function Sidebar({ current, onNavigate, user, onLogout }) {
   const NAV = [
     { id: 'attendance', Icon: BarChart2,     label: 'Attendance Mail',  desc: 'Send per-student reports'   },
     { id: 'bulk',       Icon: Send,          label: 'Bulk Mailer',      desc: 'Circulars, notices & more'  },
@@ -13,7 +13,7 @@ export default function Sidebar({ current, onNavigate }) {
   return (
     <aside style={{
       width: 240, height: '100vh', background: '#0f172a',
-      display: 'flex', flexDirection: 'column', padding: '0 0 24px',
+      display: 'flex', flexDirection: 'column', padding: '0 0 0',
       flexShrink: 0, overflowY: 'auto',
     }}>
       {/* Logo */}
@@ -46,8 +46,34 @@ export default function Sidebar({ current, onNavigate }) {
         ))}
       </nav>
 
-      <div style={{ padding: '0 20px', fontSize: 10, color: '#334155' }}>
-        v1.0.0 · Aurora Mailer
+      {/* User + Logout */}
+      <div style={{ borderTop: '1px solid #1e293b', padding: '14px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <div style={{
+            width: 30, height: 30, borderRadius: '50%',
+            background: '#1e3a8a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <User size={14} color="#93c5fd" />
+          </div>
+          <div style={{ overflow: 'hidden' }}>
+            <div style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user || 'admin'}</div>
+            <div style={{ color: '#475569', fontSize: 10 }}>Staff</div>
+          </div>
+        </div>
+        <button
+          onClick={onLogout}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 7, width: '100%',
+            padding: '8px 10px', borderRadius: 8, border: 'none', cursor: 'pointer',
+            background: 'transparent', color: '#64748b', fontSize: 12, fontWeight: 500,
+            transition: 'background 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.color = '#f87171'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748b'; }}
+        >
+          <LogOut size={14} /> Sign Out
+        </button>
+        <div style={{ marginTop: 8, fontSize: 10, color: '#334155' }}>v1.0.0 · Aurora Mailer</div>
       </div>
     </aside>
   );

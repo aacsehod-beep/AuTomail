@@ -13,6 +13,8 @@ const logsRouter       = require('./routes/logs');
 const templatesRouter  = require('./routes/templates');
 const statsRouter      = require('./routes/stats');
 const schedulerRouter  = require('./routes/scheduler');
+const { router: authRouter } = require('./routes/auth');
+const requireAuth      = require('./middleware/requireAuth');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -26,17 +28,18 @@ app.use(fileUpload({
   useTempFiles: false,
 }));
 
-// API routes
-app.use('/api/sections',   sectionsRouter);
-app.use('/api/recipients', recipientsRouter);
-app.use('/api/send',       sendRouter);
-app.use('/api/logs',       logsRouter);
-app.use('/api/templates',  templatesRouter);
-app.use('/api/stats',      statsRouter);
-app.use('/api/scheduler',  schedulerRouter);
-
-// Health check
+// Public routes (no auth needed)
+app.use('/api/auth', authRouter);
 app.get('/api/ping', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+
+// Protected API routes
+app.use('/api/sections',   requireAuth, sectionsRouter);
+app.use('/api/recipients', requireAuth, recipientsRouter);
+app.use('/api/send',       requireAuth, sendRouter);
+app.use('/api/logs',       requireAuth, logsRouter);
+app.use('/api/templates',  requireAuth, templatesRouter);
+app.use('/api/stats',      requireAuth, statsRouter);
+app.use('/api/scheduler',  requireAuth, schedulerRouter);
 
 // Always serve React build if dist exists
 const clientDist = path.join(__dirname, '..', 'client', 'dist');

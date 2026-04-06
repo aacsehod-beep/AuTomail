@@ -1,7 +1,11 @@
 const BASE = '/api';
 
+function getToken() {
+  return sessionStorage.getItem('au_token') || '';
+}
+
 async function req(method, path, body, isForm = false) {
-  const opts = { method, headers: {} };
+  const opts = { method, headers: { 'Authorization': `Bearer ${getToken()}` } };
   if (isForm) {
     opts.body = body;
   } else if (body) {
@@ -9,6 +13,13 @@ async function req(method, path, body, isForm = false) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(BASE + path, opts);
+  if (res.status === 401) {
+    // Token expired / invalid — clear session and reload to show login
+    sessionStorage.removeItem('au_token');
+    sessionStorage.removeItem('au_user');
+    window.location.reload();
+    return;
+  }
   const json = await res.json().catch(() => ({ error: 'Invalid server response' }));
   if (!res.ok) throw new Error(json.error || 'Server error');
   return json;
@@ -32,7 +43,8 @@ export const api = {
 };
 
 export function sseProgress(jobId, onData, onDone) {
-  const es = new EventSource(`/api/send/progress/${jobId}`);
+  const token = getToken();
+  const es = new EventSource(`/api/send/progress/${jobId}?token=${encodeURIComponent(token)}`);
   es.onmessage = e => {
     const job = JSON.parse(e.data);
     onData(job);

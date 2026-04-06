@@ -30,6 +30,17 @@ router.post('/', async (req, res) => {
       type:     f.mimetype || 'application/pdf',
     }));
 
+    // Collect individual certificate PDFs → map { key → {content, filename} }
+    const rawCerts = req.files?.certFiles
+      ? (Array.isArray(req.files.certFiles) ? req.files.certFiles : [req.files.certFiles])
+      : [];
+    const certMatchKey = payload.certMatchKey || 'regNo';
+    const certMap = {};
+    rawCerts.forEach(f => {
+      const key = f.name.replace(/\.pdf$/i, '').trim().toLowerCase();
+      certMap[key] = { content: f.data.toString('base64'), filename: f.name, type: 'application/pdf' };
+    });
+
     const recipients = (payload.recipients || []).filter(r => parser.isValidEmail(r.email));
     if (!recipients.length) return res.status(400).json({ error: 'No valid recipients' });
 
@@ -41,7 +52,7 @@ router.post('/', async (req, res) => {
     res.json({ jobId });
 
     // Run send job in background (intentionally not awaited)
-    runJob(jobId, type, payload, recipients, buffer, originalFilename, attachments).catch(err => {
+    runJob(jobId, type, payload, recipients, buffer, originalFilename, attachments, certMap, certMatchKey).catch(err => {
       jobManager.updateJob(jobId, { status: 'Error: ' + err.message, finished: true });
     });
 
@@ -51,7 +62,12 @@ router.post('/', async (req, res) => {
 });
 
 // SSE progress stream  GET /api/send/progress/:jobId
+// Auth: accepts Bearer header OR ?token= query param (EventSource doesn't support headers)
 router.get('/progress/:jobId', (req, res) => {
+  const { isValidToken } = require('../routes/auth');
+  const token = req.query.token || (req.headers['authorization'] || '').replace('Bearer ', '');
+  if (!isValidToken(token)) return res.status(401).json({ error: 'Unauthorised' });
+
   const { jobId } = req.params;
   res.setHeader('Content-Type',  'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -80,7 +96,7 @@ router.post('/cancel/:jobId', (req, res) => {
 });
 
 // ─── Job Runner ───────────────────────────────────────────────────────────────
-async function runJob(jobId, type, payload, recipients, buffer, originalFilename = '', attachments = []) {
+async function runJob(jobId, type, payload, recipients, buffer, originalFilename = '', attachments = [], certMap = {}, certMatchKey = 'regNo') {
   const sender  = process.env.SENDER_EMAIL || 'no-reply@aurora.edu';
   const logRows = [];
   let sent = 0, failed = 0, done = 0;
@@ -158,6 +174,19 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
         };
       }
 
+      case 'certificate': {
+        // Match this recipient's certificate from certMap
+        const lookupKey = (certMatchKey === 'regNo' ? (rec.regNo || '') : (rec.name || '')).trim().toLowerCase();
+        const certAtt = certMap[lookupKey];
+        if (!certAtt) throw new Error(`No certificate PDF found for ${certMatchKey === 'regNo' ? 'Roll No' : 'Name'}: "${lookupKey || '(empty)'}"`);
+        const subjectFilled = templates.fillTemplate(payload.subject || `Your Certificate – ${rec.name}`, ctx);
+        const { html, text } = templates.renderCertificateHtml({ ctx, body: payload.body || '' });
+        return {
+          to: rec.email, toName: rec.name, subject: subjectFilled, html, text,
+          attachments: [certAtt],
+        };
+      }
+
       default:
         throw new Error('Unknown mail type: ' + type);
     }
@@ -175,6 +204,7 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
                      section: rec?.section, status: 'SENT', message: 'Delivered', sender });
     } else {
       failed++;
+      console.error(`[runJob FAIL] email=${result.email} error=${result.error}`);
       logRows.push({ jobId, type, recipient: result.email, name: rec?.name, regNo: rec?.regNo,
                      section: rec?.section, status: 'FAILED', message: result.error, sender });
     }
