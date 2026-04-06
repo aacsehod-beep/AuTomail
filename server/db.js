@@ -2,7 +2,7 @@ const { Database } = require('node-sqlite3-wasm');
 const path = require('path');
 const fs   = require('fs');
 
-const DB_DIR  = path.join(__dirname, '..', 'data');
+const DB_DIR  = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
 
 // Clean up stale lock left by a crashed previous process

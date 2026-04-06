@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: aurora-bulk-mailer
+    runtime: node
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: SENDER_EMAIL
+        sync: false
+      - key: SENDER_NAME
+        sync: false
+      - key: APP_USER
+        sync: false
+      - key: APP_PASS
+        sync: false
+    disk:
+      name: aurora-data
+      mountPath: /var/data
+      sizeGB: 1

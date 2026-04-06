@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Aurora University –  Student Mailer (Attendance, Circulars, Announcements, Events)",
   "main": "server/index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "dev:server": "nodemon server/index.js",
     "dev:client": "vite client",
