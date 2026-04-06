@@ -41,12 +41,20 @@ app.use('/api/templates',  requireAuth, templatesRouter);
 app.use('/api/stats',      requireAuth, statsRouter);
 app.use('/api/scheduler',  requireAuth, schedulerRouter);
 
-// Always serve React build if dist exists
+// Serve React build
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
-if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist));
-  app.get('*', (_req, res) => res.sendFile(path.join(clientDist, 'index.html')));
+const indexHtml  = path.join(clientDist, 'index.html');
+if (!fs.existsSync(indexHtml)) {
+  console.error('[WARN] client/dist/index.html not found — run npm run build first');
 }
+app.use(express.static(clientDist));
+app.get('*', (_req, res) => {
+  if (fs.existsSync(indexHtml)) {
+    res.sendFile(indexHtml);
+  } else {
+    res.status(503).send('UI not built. Check build logs.');
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Aurora Mailer server running on http://localhost:${PORT}`);
