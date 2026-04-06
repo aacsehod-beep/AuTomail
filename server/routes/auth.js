@@ -32,9 +32,11 @@ router.post('/logout', (req, res) => {
 });
 
 // Helper used by middleware
+// Also accepts ?token= query param (needed for EventSource / SSE which can't send headers)
 function extractToken(req) {
   const header = req.headers['authorization'] || '';
   if (header.startsWith('Bearer ')) return header.slice(7);
+  if (req.query?.token) return req.query.token;
   return null;
 }
 

@@ -46,8 +46,11 @@ db.run(`CREATE TABLE IF NOT EXISTS jobs (
   finished     INTEGER DEFAULT 0,
   cancelled    INTEGER DEFAULT 0,
   created_at   TEXT NOT NULL,
-  finished_at  TEXT
+  finished_at  TEXT,
+  payload_json TEXT
 )`);
+// Add payload_json to existing DBs that predate this column (silently ignore if already exists)
+try { db.run(`ALTER TABLE jobs ADD COLUMN payload_json TEXT`); } catch (_) {}
 
 db.run(`CREATE TABLE IF NOT EXISTS templates (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

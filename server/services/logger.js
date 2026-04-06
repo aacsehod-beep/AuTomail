@@ -55,7 +55,7 @@ function logBatch(rows) {
   })));
 }
 
-function getLogs({ type, status, section, jobId, limit = 500, offset = 0 } = {}) {
+function getLogs({ type, status, section, jobId, search, limit = 500, offset = 0 } = {}) {
   const conditions = [];
   const params     = [];
 
@@ -63,6 +63,7 @@ function getLogs({ type, status, section, jobId, limit = 500, offset = 0 } = {})
   if (status  && status  !== 'all') { conditions.push('status = ?');  params.push(status);  }
   if (section && section !== 'all') { conditions.push('section = ?'); params.push(section); }
   if (jobId)                        { conditions.push('job_id = ?');  params.push(jobId);   }
+  if (search)                       { conditions.push('(name LIKE ? OR recipient LIKE ?)'); params.push(`%${search}%`, `%${search}%`); }
 
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
   const sql   = `SELECT * FROM email_logs ${where} ORDER BY sent_at DESC LIMIT ? OFFSET ?`;
@@ -71,13 +72,14 @@ function getLogs({ type, status, section, jobId, limit = 500, offset = 0 } = {})
   return db.prepare(sql).all(params);
 }
 
-function getLogCount({ type, status, section, jobId } = {}) {
+function getLogCount({ type, status, section, jobId, search } = {}) {
   const conditions = [];
   const params     = [];
   if (type    && type    !== 'all') { conditions.push('type = ?');    params.push(type);    }
   if (status  && status  !== 'all') { conditions.push('status = ?');  params.push(status);  }
   if (section && section !== 'all') { conditions.push('section = ?'); params.push(section); }
   if (jobId)                        { conditions.push('job_id = ?');  params.push(jobId);   }
+  if (search)                       { conditions.push('(name LIKE ? OR recipient LIKE ?)'); params.push(`%${search}%`, `%${search}%`); }
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
   return db.prepare(`SELECT COUNT(*) as cnt FROM email_logs ${where}`).get(params)?.cnt || 0;
 }

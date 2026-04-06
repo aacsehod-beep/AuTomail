@@ -73,27 +73,46 @@ function loadRecipients(buffer, sections, mapping = {}, originalFilename) {
 
 /**
  * Load full attendance data for a section.
+ * mapping: { startRow, nameCol, emailCol }
+ * subjLayout: optional array of { nameCol, heldCol, attendedCol, pctCol } — overrides default SUBJECT_COLS/PERCENT_COLS
  */
-function loadAttendanceData(buffer, displaySection, mapping = {}, originalFilename) {
+function loadAttendanceData(buffer, displaySection, mapping = {}, originalFilename, subjLayout) {
   const { wb, map } = readWorkbook(buffer, originalFilename);
   const actualSec = map[displaySection] || displaySection;
   const ws = wb.Sheets[actualSec];
   if (!ws) throw new Error(`Sheet "${displaySection}" not found`);
 
-  const grid      = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-  const startRow  = Number(mapping.startRow || DEFAULT_START_ROW);
-  const nameCol   = Number(mapping.nameCol  || DEFAULT_NAME_COL);
-  const emailCol  = Number(mapping.emailCol || DEFAULT_EMAIL_COL);
+  const grid           = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  const startRow        = Number(mapping.startRow        || DEFAULT_START_ROW);
+  const nameCol         = Number(mapping.nameCol         || DEFAULT_NAME_COL);
+  const emailCol        = Number(mapping.emailCol        || DEFAULT_EMAIL_COL);
+  const weekInfoRow     = Number(mapping.weekInfoRow     || 7);   // row that contains the period/week label
+  const subjectHdrRow   = Number(mapping.subjectHdrRow   || 8);   // row that contains subject names
   const idxName   = nameCol  - 1;
   const idxEmail  = emailCol - 1;
 
-  // Row 7 (index 6) — week/period info: first non-empty cell
-  const weekRow  = grid[6] || [];
-  const weekInfo = weekRow.find(v => String(v).trim()) || 'Current Week';
+  // Week / period info — first non-empty cell in the configured row
+  const weekRow  = grid[weekInfoRow - 1] || [];
+  const weekInfo = weekRow.find(v => String(v).trim()) || 'Current Period';
 
-  // Row 8 (index 7) — subject names at SUBJECT_COLS
-  const headerRow  = grid[7] || [];
-  const subjNames  = SUBJECT_COLS.map(c => String(headerRow[c - 1] || '').trim());
+  // Resolve subject layout: use custom subjLayout if provided, else fall back to default columns
+  const layout = (Array.isArray(subjLayout) && subjLayout.length > 0)
+    ? subjLayout.map(s => ({
+        nameCol:      Number(s.nameCol)     || 5,
+        heldCol:      Number(s.heldCol)     || 6,
+        attendedCol:  Number(s.attendedCol) || 7,
+        pctCol:       Number(s.pctCol)      || 7,
+      }))
+    : SUBJECT_COLS.map((c, i) => ({
+        nameCol:     c,
+        heldCol:     c + 1,
+        attendedCol: c + 2,
+        pctCol:      PERCENT_COLS[i],
+      }));
+
+  // Subject names — read from the configured header row
+  const headerRow = grid[subjectHdrRow - 1] || [];
+  const subjNames = layout.map(s => String(headerRow[s.nameCol - 1] || '').trim());
 
   // Rows from startRow onwards — student data
   const students = {};
@@ -104,9 +123,11 @@ function loadAttendanceData(buffer, displaySection, mapping = {}, originalFilena
 
     const name  = String(row[idxName] || '').trim();
     const regNo = String(row[2]       || '').trim();
-    const subjectsData = subjNames.map((name, i) => ({
-      name,
-      percent: toNumber(row[PERCENT_COLS[i] - 1]),
+    const subjectsData = layout.map((s, i) => ({
+      name:     subjNames[i] || `Subject ${i + 1}`,
+      percent:  toNumber(row[s.pctCol - 1]),
+      held:     toNumber(row[s.heldCol - 1]),
+      attended: toNumber(row[s.attendedCol - 1]),
     }));
 
     students[email] = { name, regNo, subjects: subjectsData };
@@ -160,11 +181,63 @@ function toNumber(v) {
   return parseFloat(String(v).replace(/[^0-9.\-]/g, '')) || 0;
 }
 
+/**
+ * Parse a fee sheet and return per-student fee details.
+ * feeMapping: { startRow, nameCol, emailCol, regNoCol, feeItems: [{ label, amountCol, dueDateCol, markOverdue }] }
+ * Returns: Map  email.toLowerCase() → { name, regNo, feeDetails: [{ label, amount, dueDate, overdue }] }
+ */
+function loadFeeData(buffer, originalFilename, feeMapping = {}) {
+  const { wb } = readWorkbook(buffer, originalFilename);
+  // Use first sheet
+  const sheetName = wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+  if (!ws) throw new Error('No sheet found in the uploaded fee file.');
+
+  const grid      = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  const startRow  = Number(feeMapping.startRow  || 2);
+  const nameCol   = Number(feeMapping.nameCol   || 1);
+  const emailCol  = Number(feeMapping.emailCol  || 2);
+  const regNoCol  = Number(feeMapping.regNoCol  || 3);
+  const feeItems  = Array.isArray(feeMapping.feeItems) ? feeMapping.feeItems : [];
+
+  const result = new Map(); // email → { name, regNo, feeDetails }
+
+  for (let r = startRow - 1; r < grid.length; r++) {
+    const row   = grid[r];
+    const email = String(row[emailCol - 1] || '').trim().toLowerCase();
+    if (!email || !isValidEmail(email)) continue;
+
+    const name  = String(row[nameCol  - 1] || '').trim();
+    const regNo = String(row[regNoCol - 1] || '').trim();
+
+    const feeDetails = feeItems
+      .map(item => {
+        const amount = toNumber(row[(item.amountCol || 0) - 1]);
+        if (amount <= 0) return null; // skip items with no amount
+        const dueDateRaw = item.dueDateCol > 0 ? String(row[item.dueDateCol - 1] || '').trim() : '';
+        return {
+          label:   item.label || 'Fee',
+          amount,
+          dueDate: dueDateRaw,
+          overdue: item.markOverdue ? true : false,
+        };
+      })
+      .filter(Boolean);
+
+    if (feeDetails.length > 0) {
+      result.set(email, { name: name || email, regNo, feeDetails });
+    }
+  }
+
+  return result;
+}
+
 module.exports = {
   listSections,
   loadRecipients,
   loadAttendanceData,
   filterBelowThreshold,
+  loadFeeData,
   isValidEmail,
   SUBJECT_COLS,
   PERCENT_COLS,

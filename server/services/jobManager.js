@@ -3,11 +3,11 @@ const db = require('../db');
 // In-memory job registry: jobId → { cancelled: bool, sseClients: Set }
 const jobRegistry = new Map();
 
-function createJob({ id, type, title, total }) {
+function createJob({ id, type, title, total, payload }) {
   db.prepare(`
-    INSERT INTO jobs (id, type, title, total, sent, failed, done, status, finished, cancelled, created_at)
-    VALUES (?, ?, ?, ?, 0, 0, 0, 'running', 0, 0, ?)
-  `).run([id, type, title || type, total, new Date().toISOString()]);
+    INSERT INTO jobs (id, type, title, total, sent, failed, done, status, finished, cancelled, created_at, payload_json)
+    VALUES (?, ?, ?, ?, 0, 0, 0, 'running', 0, 0, ?, ?)
+  `).run([id, type, title || type, total, new Date().toISOString(), payload ? JSON.stringify(payload) : null]);
 
   jobRegistry.set(id, { cancelled: false, sseClients: new Set() });
 }

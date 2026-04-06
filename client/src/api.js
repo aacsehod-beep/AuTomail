@@ -30,6 +30,7 @@ export const api = {
   listSections:  (form)           => req('POST', '/sections',   form, true),
   loadRecipients:(form)           => req('POST', '/recipients', form, true),
   startSend:     (form)           => req('POST', '/send',       form, true),
+  resendJob:     (jobId)          => req('POST', `/send/resend/${jobId}`),
   getJob:        (id)             => req('GET',  `/send/job/${id}`),
   cancelJob:     (id)             => req('POST', `/send/cancel/${id}`),
   getLogs:       (params = {})    => req('GET',  '/logs?' + new URLSearchParams(params)),

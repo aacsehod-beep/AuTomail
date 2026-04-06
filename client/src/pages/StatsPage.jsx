@@ -1,11 +1,34 @@
-import { useState, useEffect } from 'react';
-import { TrendingUp, Calendar, BarChart2, Building2, FolderOpen } from 'lucide-react';
+import { useState, useEffect } from 'react';import { TrendingUp, Calendar, BarChart2, Building2, FolderOpen, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../api';
 
+const TYPE_PAGE_SIZE     = 5;
+const SEC_PAGE_SIZE      = 8;
+const CAMPAIGN_PAGE_SIZE = 5;
+
+function Pagination({ page, totalPages, onChange }) {
+  if (totalPages <= 1) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginTop: 10 }}>
+      <button onClick={() => onChange(page - 1)} disabled={page === 1}
+        style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: 6, padding: '3px 8px', cursor: page === 1 ? 'default' : 'pointer', color: page === 1 ? '#cbd5e1' : '#1e3a8a', display: 'flex', alignItems: 'center' }}>
+        <ChevronLeft size={14} />
+      </button>
+      <span style={{ fontSize: 12, color: '#64748b' }}>Page {page} of {totalPages}</span>
+      <button onClick={() => onChange(page + 1)} disabled={page === totalPages}
+        style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: 6, padding: '3px 8px', cursor: page === totalPages ? 'default' : 'pointer', color: page === totalPages ? '#cbd5e1' : '#1e3a8a', display: 'flex', alignItems: 'center' }}>
+        <ChevronRight size={14} />
+      </button>
+    </div>
+  );
+}
+
 export default function StatsPage() {
-  const [stats,   setStats]   = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState('');
+  const [stats,        setStats]        = useState(null);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState('');
+  const [typePage,     setTypePage]     = useState(1);
+  const [secPage,      setSecPage]      = useState(1);
+  const [campaignPage, setCampaignPage] = useState(1);
 
   useEffect(() => {
     api.getStats()
@@ -27,6 +50,28 @@ export default function StatsPage() {
     if (r.status === 'SENT')   typeMap[r.type].sent   = r.cnt;
     if (r.status === 'FAILED') typeMap[r.type].failed = r.cnt;
   });
+  const typeEntries = Object.entries(typeMap);
+  const typeTotalPages = Math.max(1, Math.ceil(typeEntries.length / TYPE_PAGE_SIZE));
+  const typeSlice = typeEntries.slice((typePage - 1) * TYPE_PAGE_SIZE, typePage * TYPE_PAGE_SIZE);
+
+  // Build section rows
+  const secRows = (stats.bySec || []).reduce((acc, row) => {
+    const existing = acc.find(r => r.section === row.section);
+    if (existing) {
+      if (row.status === 'SENT')   existing.sent   += row.cnt;
+      if (row.status === 'FAILED') existing.failed += row.cnt;
+    } else {
+      acc.push({ section: row.section, sent: row.status === 'SENT' ? row.cnt : 0, failed: row.status === 'FAILED' ? row.cnt : 0 });
+    }
+    return acc;
+  }, []);
+  const secTotalPages = Math.max(1, Math.ceil(secRows.length / SEC_PAGE_SIZE));
+  const secSlice = secRows.slice((secPage - 1) * SEC_PAGE_SIZE, secPage * SEC_PAGE_SIZE);
+
+  // Campaigns pagination
+  const campaigns = stats.recentCampaigns || [];
+  const campaignTotalPages = Math.max(1, Math.ceil(campaigns.length / CAMPAIGN_PAGE_SIZE));
+  const campaignSlice = campaigns.slice((campaignPage - 1) * CAMPAIGN_PAGE_SIZE, campaignPage * CAMPAIGN_PAGE_SIZE);
 
   return (
     <div style={{ maxWidth: 1100 }}>
@@ -44,19 +89,25 @@ export default function StatsPage() {
       </div>
 
       {/* Trend */}
-      {stats.trend?.length > 0 && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <h3 style={sh3}><Calendar size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />14-Day Send Trend</h3>
-          <TrendChart data={stats.trend} />
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h3 style={{ ...sh3, marginBottom: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Calendar size={14} /> 14-Day Send Trend
+          </h3>
+          <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#64748b' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: '#2563eb', borderRadius: 2, display: 'inline-block' }} /> Sent</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: '#fca5a5', borderRadius: 2, display: 'inline-block' }} /> Failed</span>
+          </div>
         </div>
-      )}
+        <TrendChart data={stats.trend || []} />
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
         {/* Type Breakdown */}
         <div className="card">
           <h3 style={sh3}><BarChart2 size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />By Mail Type</h3>
-          {Object.keys(typeMap).length === 0 && <p style={{ color: '#94a3b8', fontSize: 13 }}>No data yet</p>}
-          {Object.entries(typeMap).map(([type, v]) => {
+          {typeEntries.length === 0 && <p style={{ color: '#94a3b8', fontSize: 13 }}>No data yet</p>}
+          {typeSlice.map(([type, v]) => {
             const total = v.sent + v.failed;
             const pct   = total > 0 ? Math.round((v.sent / total) * 100) : 0;
             return (
@@ -71,49 +122,43 @@ export default function StatsPage() {
               </div>
             );
           })}
+          <Pagination page={typePage} totalPages={typeTotalPages} onChange={setTypePage} />
         </div>
 
         {/* Section Breakdown */}
         <div className="card">
           <h3 style={sh3}><Building2 size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />By Section</h3>
-          <div style={{ maxHeight: 280, overflowY: 'auto' }}>
-            <table className="table" style={{ fontSize: 12 }}>
-              <thead><tr><th>Section</th><th>Sent</th><th>Failed</th></tr></thead>
-              <tbody>
-                {(stats.bySec || []).reduce((acc, row) => {
-                  const existing = acc.find(r => r.section === row.section);
-                  if (existing) {
-                    if (row.status === 'SENT')   existing.sent   += row.cnt;
-                    if (row.status === 'FAILED') existing.failed += row.cnt;
-                  } else {
-                    acc.push({ section: row.section, sent: row.status === 'SENT' ? row.cnt : 0, failed: row.status === 'FAILED' ? row.cnt : 0 });
-                  }
-                  return acc;
-                }, []).map(r => (
-                  <tr key={r.section}>
-                    <td><span className="badge badge-info">{r.section}</span></td>
-                    <td style={{ color: '#16a34a', fontWeight: 600 }}>{r.sent}</td>
-                    <td style={{ color: r.failed > 0 ? '#dc2626' : '#94a3b8', fontWeight: r.failed > 0 ? 600 : 400 }}>{r.failed}</td>
-                  </tr>
-                ))}
-                {(stats.bySec || []).length === 0 && (
-                  <tr><td colSpan={3} style={{ textAlign: 'center', color: '#94a3b8', padding: 20 }}>No section data</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <table className="table" style={{ fontSize: 12 }}>
+            <thead><tr><th>Section</th><th>Sent</th><th>Failed</th></tr></thead>
+            <tbody>
+              {secSlice.map(r => (
+                <tr key={r.section}>
+                  <td><span className="badge badge-info">{r.section}</span></td>
+                  <td style={{ color: '#16a34a', fontWeight: 600 }}>{r.sent}</td>
+                  <td style={{ color: r.failed > 0 ? '#dc2626' : '#94a3b8', fontWeight: r.failed > 0 ? 600 : 400 }}>{r.failed}</td>
+                </tr>
+              ))}
+              {secRows.length === 0 && (
+                <tr><td colSpan={3} style={{ textAlign: 'center', color: '#94a3b8', padding: 20 }}>No section data</td></tr>
+              )}
+            </tbody>
+          </table>
+          <Pagination page={secPage} totalPages={secTotalPages} onChange={setSecPage} />
         </div>
       </div>
 
       {/* Recent Campaigns */}
-      {stats.recentCampaigns?.length > 0 && (
+      {campaigns.length > 0 && (
         <div className="card">
-          <h3 style={sh3}><FolderOpen size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Recent Campaigns</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h3 style={{ ...sh3, marginBottom: 0 }}><FolderOpen size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Recent Campaigns</h3>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>{campaigns.length} total</span>
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table className="table">
               <thead><tr><th>Job ID</th><th>Type</th><th>Started</th><th>Sent</th><th>Failed</th><th>Total</th><th>Rate</th></tr></thead>
               <tbody>
-                {stats.recentCampaigns.map(c => {
+                {campaignSlice.map(c => {
                   const pct = c.total > 0 ? Math.round((c.sent / c.total) * 100) : 0;
                   return (
                     <tr key={c.job_id}>
@@ -134,6 +179,7 @@ export default function StatsPage() {
               </tbody>
             </table>
           </div>
+          <Pagination page={campaignPage} totalPages={campaignTotalPages} onChange={setCampaignPage} />
         </div>
       )}
     </div>
@@ -141,34 +187,93 @@ export default function StatsPage() {
 }
 
 function StatCard({ val, lbl, color }) {
+  // Count-up animation: works for plain numbers and strings ending with '%'
+  const isPercent = typeof val === 'string' && val.endsWith('%');
+  const target    = isPercent ? parseFloat(val) : (typeof val === 'number' ? val : null);
+  const [display, setDisplay] = useState(0);
+
+  useEffect(() => {
+    if (target === null) return;
+    let startTime = null;
+    const DURATION = 1100;
+    function step(ts) {
+      if (!startTime) startTime = ts;
+      const progress = Math.min((ts - startTime) / DURATION, 1);
+      const eased = 1 - Math.pow(1 - progress, 3); // cubic ease-out
+      setDisplay(Math.round(eased * target));
+      if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }, [target]);
+
+  const shown = target !== null ? (isPercent ? display + '%' : display) : val;
+
   return (
     <div className="stat-card">
-      <div className="stat-val" style={{ color }}>{val}</div>
+      <div className="stat-val" style={{ color }}>{shown}</div>
       <div className="stat-lbl">{lbl}</div>
     </div>
   );
 }
 
 function TrendChart({ data }) {
-  const maxVal = Math.max(...data.map(d => d.sent + d.failed), 1);
+  // Always render exactly 14 days regardless of data
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const row = data.find(r => r.day === key) || { day: key, sent: 0, failed: 0 };
+    days.push(row);
+  }
+
+  const CHART_H = 120;
+  const maxVal  = Math.max(...days.map(d => d.sent + d.failed), 1);
+
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 120, padding: '0 4px' }}>
-      {data.map(d => {
-        const total  = d.sent + d.failed;
-        const height = Math.round((total / maxVal) * 100);
-        return (
-          <div key={d.day} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-            <div style={{ fontSize: 9, color: '#94a3b8', whiteSpace: 'nowrap' }}>{total}</div>
-            <div style={{ width: '100%', position: 'relative' }}>
-              <div style={{ background: '#fee2e2', width: '100%', height: Math.round((d.failed / maxVal) * 100) + 'px', borderRadius: '3px 3px 0 0' }} />
-              <div style={{ background: '#2563eb', width: '100%', height: Math.round((d.sent / maxVal) * 100) + 'px', borderRadius: '3px 3px 0 0' }} />
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, minWidth: 420, paddingBottom: 28 }}>
+        {days.map(d => {
+          const total = d.sent + d.failed;
+          const sentH = Math.round((d.sent   / maxVal) * CHART_H);
+          const failH = Math.round((d.failed / maxVal) * CHART_H);
+          const label = d.day.slice(5); // MM-DD
+
+          return (
+            <div key={d.day} title={`${d.day}  Sent: ${d.sent}  Failed: ${d.failed}`}
+              style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
+
+              {/* count label above bar */}
+              <div style={{ fontSize: 9, color: '#94a3b8', height: 14, lineHeight: '14px' }}>
+                {total > 0 ? total : ''}
+              </div>
+
+              {/* bar column — fixed height container so bars sit at the bottom */}
+              <div style={{ height: CHART_H, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', width: '80%', minWidth: 12 }}>
+                {failH > 0 && (
+                  <div style={{ background: '#fca5a5', height: failH, width: '100%',
+                    borderRadius: sentH === 0 ? '3px 3px 0 0' : '3px 3px 0 0' }} />
+                )}
+                {sentH > 0 && (
+                  <div style={{ background: '#2563eb', height: sentH, width: '100%',
+                    borderRadius: failH === 0 ? '3px 3px 0 0' : '0' }} />
+                )}
+                {total === 0 && (
+                  <div style={{ height: 2, background: '#e2e8f0', width: '100%', borderRadius: 1 }} />
+                )}
+              </div>
+
+              {/* day label */}
+              <div style={{
+                position: 'absolute', bottom: -22, fontSize: 9, color: '#94a3b8',
+                transform: 'rotate(-45deg)', transformOrigin: 'top center', whiteSpace: 'nowrap',
+              }}>
+                {label}
+              </div>
             </div>
-            <div style={{ fontSize: 9, color: '#94a3b8', whiteSpace: 'nowrap', transform: 'rotate(-45deg)', transformOrigin: 'top center' }}>
-              {d.day?.slice(5)}
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -4,12 +4,12 @@ const { getLogs, getLogCount } = require('../services/logger');
 // GET /api/logs?type=&status=&section=&jobId=&limit=&offset=
 router.get('/', (req, res) => {
   try {
-    const { type, status, section, jobId } = req.query;
+    const { type, status, section, jobId, search } = req.query;
     const limit  = Math.min(Number(req.query.limit  || 200), 1000);
     const offset = Number(req.query.offset || 0);
 
-    const rows  = getLogs({ type, status, section, jobId, limit, offset });
-    const total = getLogCount({ type, status, section, jobId });
+    const rows  = getLogs({ type, status, section, jobId, search, limit, offset });
+    const total = getLogCount({ type, status, section, jobId, search });
     res.json({ rows, total, limit, offset });
   } catch (err) {
     res.status(500).json({ error: err.message });

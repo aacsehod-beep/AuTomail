@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
+import { ToastContainer } from './components/Toast';
 import LoginPage        from './pages/LoginPage';
 import AttendancePage   from './pages/AttendancePage';
 import BulkMailPage     from './pages/BulkMailPage';
@@ -18,10 +19,24 @@ const PAGES = {
 };
 
 export default function App() {
-  const [token, setToken] = useState(() => sessionStorage.getItem('au_token') || '');
-  const [user,  setUser]  = useState(() => sessionStorage.getItem('au_user')  || '');
-  const [page,  setPage]  = useState('attendance');
+  const [token,     setToken]     = useState(() => sessionStorage.getItem('au_token') || '');
+  const [user,      setUser]      = useState(() => sessionStorage.getItem('au_user')  || '');
+  const [page,      setPage]      = useState('attendance');
+  const [collapsed, setCollapsed] = useState(false);
+  const [darkMode,  setDarkMode]  = useState(() => localStorage.getItem('au_dark') === 'true');
   const Page = PAGES[page] || AttendancePage;
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+  }, [darkMode]);
+
+  function toggleDark() {
+    setDarkMode(v => {
+      const next = !v;
+      localStorage.setItem('au_dark', next);
+      return next;
+    });
+  }
 
   function handleLogin(tok, usr) {
     setToken(tok);
@@ -43,10 +58,18 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <Sidebar current={page} onNavigate={setPage} user={user} onLogout={handleLogout} />
+      <Sidebar
+        current={page} onNavigate={setPage}
+        user={user} onLogout={handleLogout}
+        collapsed={collapsed} onToggleCollapse={() => setCollapsed(v => !v)}
+        darkMode={darkMode} onToggleDark={toggleDark}
+      />
       <main style={{ flex: 1, padding: '28px', overflowY: 'auto', maxWidth: '100%' }}>
-        <Page />
+        <div key={page} className="page-fade">
+          <Page />
+        </div>
       </main>
+      <ToastContainer />
     </div>
   );
 }

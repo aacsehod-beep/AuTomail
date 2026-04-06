@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ClipboardList, Download } from 'lucide-react';
+import { ClipboardList, Download, RefreshCw } from 'lucide-react';
 import { api } from '../api';
+import { showToast } from '../components/Toast';
 
 const STATUS_COLORS = { SENT: 'badge-success', FAILED: 'badge-danger' };
 
@@ -9,7 +10,7 @@ export default function LogsPage() {
   const [total,   setTotal]   = useState(0);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
-  const [filters, setFilters] = useState({ type: '', status: '', section: '', jobId: '' });
+  const [filters, setFilters] = useState({ type: '', status: '', section: '', jobId: '', search: '' });
   const [page,    setPage]    = useState(0);
   const LIMIT = 100;
 
@@ -33,6 +34,17 @@ export default function LogsPage() {
     window.open('/api/logs/export?' + params.toString(), '_blank');
   }
 
+  async function handleResend() {
+    try {
+      const result = await api.resendJob(filters.jobId);
+      showToast(`Resend started — Job ${result.jobId}`, 'success');
+    } catch (e) {
+      showToast('Resend failed: ' + e.message, 'error');
+    }
+  }
+
+  const hasFailed = rows.some(r => r.status === 'FAILED');
+
   return (
     <div style={{ maxWidth: 1100 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
@@ -40,7 +52,14 @@ export default function LogsPage() {
           <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><ClipboardList size={20} /> Email Logs</h1>
           <p style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>Full send history — {total} total records</p>
         </div>
-        <button className="btn btn-outline" onClick={handleExport}><Download size={14} /> Export CSV</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {filters.jobId && hasFailed && (
+            <button className="btn btn-outline" onClick={handleResend} style={{ color: '#f59e0b', borderColor: '#f59e0b' }}>
+              <RefreshCw size={14} /> Resend Failed
+            </button>
+          )}
+          <button className="btn btn-outline" onClick={handleExport}><Download size={14} /> Export CSV</button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -72,6 +91,11 @@ export default function LogsPage() {
             <label className="form-label">Job ID</label>
             <input className="form-control" placeholder="uuid…" value={filters.jobId}
               onChange={e => setFilters(f => ({ ...f, jobId: e.target.value }))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Search</label>
+            <input className="form-control" placeholder="Name or email…" value={filters.search}
+              onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} />
           </div>
         </div>
       </div>
@@ -112,15 +136,52 @@ export default function LogsPage() {
       </div>
 
       {/* Pagination */}
-      {total > LIMIT && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 14, alignItems: 'center' }}>
-          <button className="btn btn-ghost" disabled={page === 0} onClick={() => load(page - 1)}>← Prev</button>
-          <span style={{ fontSize: 13, color: '#64748b' }}>
-            Page {page + 1} of {Math.ceil(total / LIMIT)} &nbsp;·&nbsp; {total} records
-          </span>
-          <button className="btn btn-ghost" disabled={(page + 1) * LIMIT >= total} onClick={() => load(page + 1)}>Next →</button>
-        </div>
-      )}
+      {total > LIMIT && (() => {
+        const totalPages = Math.ceil(total / LIMIT);
+        // Build page windows: first, last, current±2, with ellipsis
+        const pageNums = [];
+        for (let i = 0; i < totalPages; i++) {
+          if (i === 0 || i === totalPages - 1 || Math.abs(i - page) <= 2) {
+            pageNums.push(i);
+          }
+        }
+        // Insert ellipsis markers
+        const items = [];
+        pageNums.forEach((p, idx) => {
+          if (idx > 0 && p - pageNums[idx - 1] > 1) items.push('...');
+          items.push(p);
+        });
+
+        return (
+          <div style={{ display: 'flex', gap: 6, marginTop: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 13 }}
+              disabled={page === 0} onClick={() => load(0)}>«</button>
+            <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 13 }}
+              disabled={page === 0} onClick={() => load(page - 1)}>‹ Prev</button>
+
+            {items.map((item, idx) =>
+              item === '...'
+                ? <span key={`ellipsis-${idx}`} style={{ padding: '5px 4px', color: '#94a3b8', fontSize: 13 }}>…</span>
+                : (
+                  <button key={item} onClick={() => load(item)}
+                    className={item === page ? 'btn btn-primary' : 'btn btn-ghost'}
+                    style={{ padding: '5px 11px', fontSize: 13, minWidth: 36 }}>
+                    {item + 1}
+                  </button>
+                )
+            )}
+
+            <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 13 }}
+              disabled={(page + 1) * LIMIT >= total} onClick={() => load(page + 1)}>Next ›</button>
+            <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 13 }}
+              disabled={(page + 1) * LIMIT >= total} onClick={() => load(totalPages - 1)}>»</button>
+
+            <span style={{ marginLeft: 6, fontSize: 12, color: '#64748b' }}>
+              {page * LIMIT + 1}–{Math.min((page + 1) * LIMIT, total)} of {total} records
+            </span>
+          </div>
+        );
+      })()}
     </div>
   );
 }

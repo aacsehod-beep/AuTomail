@@ -41,12 +41,21 @@ router.post('/', async (req, res) => {
       certMap[key] = { content: f.data.toString('base64'), filename: f.name, type: 'application/pdf' };
     });
 
+    // Per-student manual attachment mode: certFile_0, certFile_1, … keyed by email
+    if (payload.certPerStudent && payload.certIndexMap) {
+      const indexMap = payload.certIndexMap;
+      Object.entries(indexMap).forEach(([email, idx]) => {
+        const f = req.files?.[`certFile_${idx}`];
+        if (f) certMap[email.toLowerCase()] = { content: f.data.toString('base64'), filename: f.name, type: 'application/pdf' };
+      });
+    }
+
     const recipients = (payload.recipients || []).filter(r => parser.isValidEmail(r.email));
     if (!recipients.length) return res.status(400).json({ error: 'No valid recipients' });
 
     const jobId = uuidv4();
     const originalFilename = req.files?.sheet?.name || '';
-    jobManager.createJob({ id: jobId, type, title: payload.title || type, total: recipients.length });
+    jobManager.createJob({ id: jobId, type, title: payload.title || type, total: recipients.length, payload });
 
     // Respond immediately with job ID — processing happens async
     res.json({ jobId });
@@ -112,11 +121,21 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
   if (type === 'attendance' && buffer) {
     Object.keys(bySec).forEach(sec => {
       try {
-        attendanceCache[sec] = parser.loadAttendanceData(buffer, sec, payload.mapping || {}, originalFilename);
+        attendanceCache[sec] = parser.loadAttendanceData(buffer, sec, payload.mapping || {}, originalFilename, payload.subjLayout);
       } catch (e) {
         attendanceCache[sec] = null;
       }
     });
+  }
+
+  // Pre-load fee data from Excel if fee_reminder + sheet uploaded
+  let feeDataMap = null; // email → { feeDetails }
+  if (type === 'fee_reminder' && payload.feeFromExcel && buffer) {
+    try {
+      feeDataMap = parser.loadFeeData(buffer, originalFilename, payload.feeMapping || {});
+    } catch (e) {
+      console.error('[runJob] loadFeeData error:', e.message);
+    }
   }
 
   const buildMessage = async (rec) => {
@@ -166,19 +185,33 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
       }
 
       case 'fee_reminder': {
-        const { html, text } = templates.renderFeeReminderHtml({ ctx, feeDetails: payload.feeDetails || [] });
+        // Use per-student fee data from Excel if available, else fall back to payload.feeDetails
+        let studentFeeDetails = payload.feeDetails || [];
+        if (feeDataMap) {
+          const entry = feeDataMap.get(rec.email.toLowerCase());
+          if (!entry) throw new Error(`No fee data found in sheet for ${rec.email}`);
+          studentFeeDetails = entry.feeDetails;
+          if (entry.name && !rec.name) rec = { ...rec, name: entry.name };
+        }
+        const subjectFilled = templates.fillTemplate(payload.subject || 'Fee Payment Reminder – {{Name}}', { ...ctx, Name: rec.name });
+        const { html, text } = templates.renderFeeReminderHtml({ ctx: { ...ctx, Name: rec.name }, feeDetails: studentFeeDetails });
         return {
           to: rec.email, toName: rec.name,
-          subject: `Fee Payment Reminder – ${rec.name}`,
+          subject: subjectFilled,
           html, text, attachments,
         };
       }
 
       case 'certificate': {
         // Match this recipient's certificate from certMap
-        const lookupKey = (certMatchKey === 'regNo' ? (rec.regNo || '') : (rec.name || '')).trim().toLowerCase();
+        const lookupKey = payload.certPerStudent
+          ? rec.email.toLowerCase()
+          : (certMatchKey === 'regNo' ? (rec.regNo || '') : (rec.name || '')).trim().toLowerCase();
         const certAtt = certMap[lookupKey];
-        if (!certAtt) throw new Error(`No certificate PDF found for ${certMatchKey === 'regNo' ? 'Roll No' : 'Name'}: "${lookupKey || '(empty)'}"`);
+        if (!certAtt) {
+          if (payload.certPerStudent) throw new Error(`No certificate PDF attached for: ${rec.email}`);
+          throw new Error(`No certificate PDF found for ${certMatchKey === 'regNo' ? 'Roll No' : 'Name'}: "${lookupKey || '(empty)'}"`);
+        }
         const subjectFilled = templates.fillTemplate(payload.subject || `Your Certificate – ${rec.name}`, ctx);
         const { html, text } = templates.renderCertificateHtml({ ctx, body: payload.body || '' });
         return {
@@ -234,5 +267,44 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
     mailer.sendOne({ to: process.env.ADMIN_EMAIL, subject: `[Aurora] Bulk Job Done – ${type}`, html }).catch(() => {});
   }
 }
+
+// POST /api/send/resend/:jobId — re-send to all FAILED recipients of a previous job
+router.post('/resend/:jobId', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const db = require('../db');
+    const job = db.prepare('SELECT * FROM jobs WHERE id=?').get([jobId]);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const payload = job.payload_json ? JSON.parse(job.payload_json) : null;
+    if (!payload) return res.status(400).json({ error: 'This job has no saved payload (it may predate this feature). Cannot resend.' });
+
+    const { getLogs } = require('../services/logger');
+    const failedRows = getLogs({ jobId, status: 'FAILED', limit: 10000 });
+    if (!failedRows.length) return res.status(400).json({ error: 'No failed recipients found for this job.' });
+
+    // Rebuild recipients from the failed log rows
+    const failedRecipients = failedRows.map(r => ({
+      email: r.recipient, name: r.name, regNo: r.reg_no, section: r.section,
+    })).filter(r => parser.isValidEmail(r.email));
+
+    if (!failedRecipients.length) return res.status(400).json({ error: 'No valid email addresses in failed list.' });
+
+    const newPayload = { ...payload, recipients: failedRecipients };
+    const type       = newPayload.type || job.type;
+    const newJobId   = uuidv4();
+    jobManager.createJob({ id: newJobId, type, title: `Resend: ${job.title || type}`, total: failedRecipients.length, payload: newPayload });
+
+    res.json({ jobId: newJobId });
+
+    // Note: attachments/cert files are not re-uploaded so cert mode will fail gracefully
+    runJob(newJobId, type, newPayload, failedRecipients, null, '', [], {}, newPayload.certMatchKey || 'regNo').catch(err => {
+      jobManager.updateJob(newJobId, { status: 'Error: ' + err.message, finished: true });
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;
