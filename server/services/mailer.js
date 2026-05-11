@@ -1,11 +1,23 @@
-const sgMail = require('@sendgrid/mail');
+const nodemailer = require('nodemailer');
 
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+// Lazy-initialise transport so missing env vars don't crash on startup
+let _transport = null;
+function getTransport() {
+  if (!_transport) {
+    _transport = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASS,
+      },
+    });
+  }
+  return _transport;
+}
 
-const FROM = {
-  email: process.env.SENDER_EMAIL || 'no-reply@aurora.edu',
-  name:  process.env.SENDER_NAME  || 'Aurora University',
-};
+const FROM_EMAIL = process.env.SENDER_EMAIL || process.env.GMAIL_USER || 'no-reply@aurora.edu';
+const FROM_NAME  = process.env.SENDER_NAME  || 'Aurora University';
+const FROM       = `"${FROM_NAME}" <${FROM_EMAIL}>`;
 
 /**
  * Send a single email.
@@ -13,8 +25,8 @@ const FROM = {
  */
 async function sendOne({ to, toName, subject, html, text, attachments = [], replyTo }) {
   const msg = {
-    to:      { email: to, name: toName || to },
     from:    FROM,
+    to:      toName ? `"${toName}" <${to}>` : to,
     subject,
     html,
     text:    text || subject,
@@ -24,14 +36,13 @@ async function sendOne({ to, toName, subject, html, text, attachments = [], repl
 
   if (attachments.length) {
     msg.attachments = attachments.map(att => ({
-      content:     att.content,   // base64 string
+      content:     Buffer.from(att.content, 'base64'),
       filename:    att.filename,
-      type:        att.type || 'application/octet-stream',
-      disposition: 'attachment',
+      contentType: att.type || 'application/octet-stream',
     }));
   }
 
-  await sgMail.send(msg);
+  await getTransport().sendMail(msg);
   return { success: true };
 }
 
@@ -47,7 +58,7 @@ async function* sendBatch(recipients, buildMessage, { batchSize = 5, delayMs = 3
       await sendOne(msg);
       yield { email: rec.email, success: true };
     } catch (err) {
-      const errMsg = err?.response?.body?.errors?.[0]?.message || err.message || 'Unknown error';
+      const errMsg = err.message || 'Unknown error';
       yield { email: rec.email, success: false, error: errMsg };
     }
 
