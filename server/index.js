@@ -32,8 +32,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(fileUpload({
   limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB max per file
   abortOnLimit: true,
-  useTempFiles: true,
-  tempFileDir: require('os').tmpdir(),
+  useTempFiles: false,
 }));
 
 // Rate limit login — max 20 attempts per 15 minutes per IP
