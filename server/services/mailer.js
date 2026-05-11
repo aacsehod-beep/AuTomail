@@ -5,10 +5,16 @@ let _transport = null;
 function getTransport() {
   if (!_transport) {
     _transport = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true, // SSL
       auth: {
         user: process.env.GMAIL_USER,
         pass: process.env.GMAIL_APP_PASS,
+      },
+      tls: {
+        // Allows sending through networks with a corporate/proxy certificate chain
+        rejectUnauthorized: false,
       },
     });
   }
