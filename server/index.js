@@ -1,9 +1,10 @@
 require('dotenv').config();
-const express = require('express');
+const express    = require('express');
 const fileUpload = require('express-fileupload');
-const cors = require('cors');
-const path = require('path');
-const fs   = require('fs');
+const cors       = require('cors');
+const rateLimit  = require('express-rate-limit');
+const path       = require('path');
+const fs         = require('fs');
 const schedulerWorker = require('./services/scheduler');
 
 const sectionsRouter   = require('./routes/sections');
@@ -16,17 +17,34 @@ const schedulerRouter  = require('./routes/scheduler');
 const { router: authRouter } = require('./routes/auth');
 const requireAuth      = require('./middleware/requireAuth');
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use(fileUpload({
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
-  abortOnLimit: true,
-  useTempFiles: false,
+// CORS — restrict to own origin in production
+const allowedOrigin = process.env.ALLOWED_ORIGIN || `http://localhost:${PORT}`;
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' ? allowedOrigin : true,
+  credentials: true,
 }));
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(fileUpload({
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB max per file
+  abortOnLimit: true,
+  useTempFiles: true,
+  tempFileDir: require('os').tmpdir(),
+}));
+
+// Rate limit login — max 20 attempts per 15 minutes per IP
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Try again in 15 minutes.' },
+});
+app.use('/api/auth/login', loginLimiter);
 
 // Public routes (no auth needed)
 app.use('/api/auth', authRouter);
@@ -56,9 +74,20 @@ app.get('*', (_req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Aurora Mailer server running on http://localhost:${PORT}`);
   schedulerWorker.start();
+});
+
+// Graceful shutdown on SIGTERM (Render sends this before stopping the container)
+process.on('SIGTERM', () => {
+  console.log('[Shutdown] SIGTERM received — closing HTTP server gracefully');
+  server.close(() => {
+    console.log('[Shutdown] HTTP server closed');
+    process.exit(0);
+  });
+  // Force exit after 30s if connections don't drain
+  setTimeout(() => process.exit(1), 30_000);
 });
 
 module.exports = app;

@@ -11,6 +11,15 @@ const { v4: uuidv4 } = require('uuid');
 const CHECK_INTERVAL = 60_000; // 1 minute
 
 function start() {
+  // Reset any jobs stuck in 'running' state from a previous crashed process
+  try {
+    const reset = db.prepare(`UPDATE scheduled_jobs SET status='pending' WHERE status='running'`);
+    const { changes } = reset.run([]);
+    if (changes > 0) console.log(`[Scheduler] Reset ${changes} stuck 'running' job(s) to 'pending'`);
+  } catch (e) {
+    console.error('[Scheduler] Failed to reset stuck jobs:', e.message);
+  }
+
   console.log('[Scheduler] Worker started — checking every 60s');
   setInterval(checkDue, CHECK_INTERVAL);
   // Run once immediately on startup too

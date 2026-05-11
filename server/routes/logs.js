@@ -12,7 +12,8 @@ router.get('/', (req, res) => {
     const total = getLogCount({ type, status, section, jobId, search });
     res.json({ rows, total, limit, offset });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[GET /api/logs] error:', err);
+    res.status(500).json({ error: 'An internal error occurred.' });
   }
 });
 
@@ -32,7 +33,8 @@ router.get('/export', (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="aurora-logs-${Date.now()}.csv"`);
     res.send(csv);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[GET /api/logs/export] error:', err);
+    res.status(500).json({ error: 'An internal error occurred.' });
   }
 });
 

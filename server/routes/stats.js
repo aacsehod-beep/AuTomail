@@ -28,7 +28,8 @@ router.get('/', (req, res) => {
 
     res.json({ ...stats, bySec, trend });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[GET /api/stats] error:', err);
+    res.status(500).json({ error: 'An internal error occurred.' });
   }
 });
 

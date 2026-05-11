@@ -24,7 +24,8 @@ router.post('/', (req, res) => {
 
     res.json({ recipients, total: recipients.length });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[POST /api/recipients] error:', err);
+    res.status(500).json({ error: 'An internal error occurred.' });
   }
 });
 

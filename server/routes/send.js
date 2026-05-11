@@ -10,13 +10,43 @@ const THRESHOLD   = Number(process.env.THRESHOLD_PERCENT || 75);
 const BATCH_SIZE  = 5;
 const DELAY_MS    = 300;
 
+// Allowed MIME types for uploaded files
+const ALLOWED_SHEET_MIMES = new Set([
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'text/csv',
+  'application/csv',
+]);
+const ALLOWED_SHEET_EXTS = /\.(xlsx|xls|csv)$/i;
+const ALLOWED_PDF_MIMES  = new Set(['application/pdf']);
+const ALLOWED_PDF_EXT    = /\.pdf$/i;
+
+function isAllowedSheet(f) {
+  return ALLOWED_SHEET_MIMES.has(f.mimetype) || ALLOWED_SHEET_EXTS.test(f.name);
+}
+function isAllowedPdf(f) {
+  return ALLOWED_PDF_MIMES.has(f.mimetype) || ALLOWED_PDF_EXT.test(f.name);
+}
+
+const MAX_PAYLOAD_BYTES = 512 * 1024; // 512 KB for JSON payload string
+
 // POST /api/send
 // multipart: sheet (file), payload (JSON string)
 router.post('/', async (req, res) => {
   try {
-    const payload    = JSON.parse(req.body.payload || '{}');
-    const buffer     = req.files?.sheet?.data || null;
+    const rawPayload = req.body.payload || '{}';
+    if (rawPayload.length > MAX_PAYLOAD_BYTES) {
+      return res.status(400).json({ error: 'Request payload too large.' });
+    }
+    const payload    = JSON.parse(rawPayload);
+    const sheetFile  = req.files?.sheet || null;
+    const buffer     = sheetFile?.data || null;
     const { type }   = payload;
+
+    // H-4: validate uploaded sheet file type
+    if (sheetFile && !isAllowedSheet(sheetFile)) {
+      return res.status(400).json({ error: 'Invalid sheet file type. Only .xlsx, .xls, .csv allowed.' });
+    }
 
     if (!type) return res.status(400).json({ error: 'Missing mail type' });
 
@@ -24,16 +54,22 @@ router.post('/', async (req, res) => {
     const rawAtts = req.files?.attachments
       ? (Array.isArray(req.files.attachments) ? req.files.attachments : [req.files.attachments])
       : [];
+    // H-4: validate attachment types
+    const invalidAtt = rawAtts.find(f => !isAllowedPdf(f));
+    if (invalidAtt) return res.status(400).json({ error: `Invalid attachment type: ${invalidAtt.name}. Only PDF files are allowed.` });
     const attachments = rawAtts.map(f => ({
       content:  f.data.toString('base64'),
       filename: f.name,
-      type:     f.mimetype || 'application/pdf',
+      type:     'application/pdf',
     }));
 
     // Collect individual certificate PDFs → map { key → {content, filename} }
     const rawCerts = req.files?.certFiles
       ? (Array.isArray(req.files.certFiles) ? req.files.certFiles : [req.files.certFiles])
       : [];
+    // H-4: validate certificate file types
+    const invalidCert = rawCerts.find(f => !isAllowedPdf(f));
+    if (invalidCert) return res.status(400).json({ error: `Invalid certificate file type: ${invalidCert.name}. Only PDF files are allowed.` });
     const certMatchKey = payload.certMatchKey || 'regNo';
     const certMap = {};
     rawCerts.forEach(f => {
@@ -46,7 +82,7 @@ router.post('/', async (req, res) => {
       const indexMap = payload.certIndexMap;
       Object.entries(indexMap).forEach(([email, idx]) => {
         const f = req.files?.[`certFile_${idx}`];
-        if (f) certMap[email.toLowerCase()] = { content: f.data.toString('base64'), filename: f.name, type: 'application/pdf' };
+        if (f && isAllowedPdf(f)) certMap[email.toLowerCase()] = { content: f.data.toString('base64'), filename: f.name, type: 'application/pdf' };
       });
     }
 
@@ -66,7 +102,8 @@ router.post('/', async (req, res) => {
     });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[POST /api/send] error:', err);
+    res.status(500).json({ error: 'An internal error occurred.' });
   }
 });
 
@@ -303,7 +340,8 @@ router.post('/resend/:jobId', async (req, res) => {
     });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[POST /api/send/resend] error:', err);
+    res.status(500).json({ error: 'An internal error occurred.' });
   }
 });
 

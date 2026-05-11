@@ -19,7 +19,8 @@ router.post('/', (req, res) => {
     `).run([title, type, JSON.stringify(payload), run_at, now]);
     res.json({ id: result.lastInsertRowid });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[POST /api/scheduler] error:', err);
+    res.status(500).json({ error: 'An internal error occurred.' });
   }
 });
 

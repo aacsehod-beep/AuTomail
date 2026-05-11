@@ -4,12 +4,19 @@ const { v4: uuidv4 } = require('uuid');
 // In-memory token store  { token → { user, createdAt } }
 const tokens = new Map();
 
+const TOKEN_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
+
 // POST /api/auth/login
 router.post('/login', (req, res) => {
   const { username, password } = req.body || {};
 
-  const validUser = process.env.APP_USER || 'admin';
-  const validPass = process.env.APP_PASS || 'Aurora@2026';
+  const validUser = process.env.APP_USER;
+  const validPass = process.env.APP_PASS;
+
+  if (!validUser || !validPass) {
+    console.error('[Auth] APP_USER or APP_PASS env vars are not set');
+    return res.status(500).json({ error: 'Server misconfiguration.' });
+  }
 
   if (
     typeof username !== 'string' || typeof password !== 'string' ||
@@ -41,7 +48,14 @@ function extractToken(req) {
 }
 
 function isValidToken(token) {
-  return !!token && tokens.has(token);
+  if (!token) return false;
+  const entry = tokens.get(token);
+  if (!entry) return false;
+  if (Date.now() - entry.createdAt > TOKEN_TTL_MS) {
+    tokens.delete(token);
+    return false;
+  }
+  return true;
 }
 
 module.exports = { router, isValidToken, extractToken };

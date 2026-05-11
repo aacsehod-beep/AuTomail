@@ -21,7 +21,8 @@ router.post('/', (req, res) => {
     `).run([name, type, subject, body, now, now]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[POST /api/templates] error:', err);
+    res.status(500).json({ error: 'An internal error occurred.' });
   }
 });
 
