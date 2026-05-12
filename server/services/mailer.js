@@ -16,6 +16,9 @@ function getTransport() {
         user: process.env.GMAIL_USER,
         pass: process.env.GMAIL_APP_PASS,
       },
+      connectionTimeout: 15000,  // 15s — fail fast if SMTP unreachable
+      greetingTimeout: 10000,
+      socketTimeout: 30000,
       tls: {
         rejectUnauthorized: false,
       },
