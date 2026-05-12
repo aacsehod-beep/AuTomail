@@ -1,6 +1,5 @@
 const https = require('https');
 const http  = require('http');
-const nodemailer = require('nodemailer');
 
 const FROM_NAME = process.env.SENDER_NAME || 'Aurora University';
 
@@ -80,47 +79,9 @@ function postToGas(urlStr, body) {
 }
 
 /**
- * Send via Gmail SMTP using per-user App Password credentials.
+ * Send a single email via Google Apps Script relay.
  */
-async function sendViaSmtp({ to, toName, subject, html, text, attachments = [], senderEmail, smtpAppPass }) {
-  // --dns-result-order=ipv4first (set in startCommand) ensures smtp.gmail.com resolves to IPv4
-  const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: { user: senderEmail, pass: smtpAppPass },
-  });
-
-  const mailOpts = {
-    from: `"${FROM_NAME}" <${senderEmail}>`,
-    to: toName ? `"${toName}" <${to}>` : to,
-    subject,
-    html: html || text || subject,
-    text: text || subject,
-  };
-
-  if (attachments && attachments.length > 0) {
-    mailOpts.attachments = attachments.map(att => ({
-      filename: att.filename,
-      content:  Buffer.from(att.content, 'base64'),
-      contentType: att.type || 'application/pdf',
-    }));
-  }
-
-  await transporter.sendMail(mailOpts);
-  return { success: true };
-}
-
-/**
- * Send a single email.
- * If senderEmail + smtpAppPass are provided, use Gmail SMTP directly.
- * Otherwise fall back to GAS relay.
- */
-async function sendOne({ to, toName, subject, html, text, attachments = [], senderEmail, smtpAppPass }) {
-  if (senderEmail && smtpAppPass) {
-    return sendViaSmtp({ to, toName, subject, html, text, attachments, senderEmail, smtpAppPass });
-  }
-
+async function sendOne({ to, toName, subject, html, text, attachments = [] }) {
   const gasUrl = process.env.GAS_MAIL_URL;
   if (!gasUrl) {
     throw new Error('GAS_MAIL_URL is not set. Deploy the GAS web app and add its URL to Render environment variables.');
@@ -133,12 +94,12 @@ async function sendOne({ to, toName, subject, html, text, attachments = [], send
  * Send to multiple recipients individually (personalised).
  * Yields { email, success, error } for each.
  */
-async function* sendBatch(recipients, buildMessage, { batchSize = 10, delayMs = 150 } = {}, senderEmail = '', smtpAppPass = '') {
+async function* sendBatch(recipients, buildMessage, { batchSize = 10, delayMs = 150 } = {}) {
   for (let i = 0; i < recipients.length; i++) {
     const rec = recipients[i];
     try {
       const msg = await buildMessage(rec);
-      await sendOne({ ...msg, senderEmail, smtpAppPass });
+      await sendOne(msg);
       yield { email: rec.email, success: true };
     } catch (err) {
       const errMsg = err.message || 'Unknown error';
