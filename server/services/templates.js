@@ -26,33 +26,22 @@ function wrapEmail(innerHtml, footerText = '') {
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Aurora University</title>
 </head>
-<body style="margin:0;padding:0;background:#f3f4f6;font-family:'Segoe UI',system-ui,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 16px">
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:'Segoe UI',Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:24px 16px">
   <tr><td align="center">
-    <table width="640" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.09);max-width:640px;width:100%">
+    <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;max-width:600px;width:100%;border:1px solid #e0e0e0">
       <!-- Header -->
       <tr>
-        <td style="background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 100%);padding:28px 32px">
-          <table width="100%"><tr>
-            <td>
-              <div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:-0.3px">Aurora University</div>
-              <div style="color:#bfdbfe;font-size:12px;margin-top:4px">Official Student Communication System</div>
-            </td>
-            <td align="right">
-              <div style="background:rgba(255,255,255,0.15);border-radius:8px;padding:6px 12px;color:#e0f2fe;font-size:11px">
-                ${new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })}
-              </div>
-            </td>
-          </tr></table>
+        <td style="background:#1a237e;padding:16px 24px">
+          <span style="color:#ffffff;font-size:16px;font-weight:600">Aurora University</span>
         </td>
       </tr>
       <!-- Body -->
-      <tr><td style="padding:32px">${innerHtml}</td></tr>
+      <tr><td style="padding:28px 24px;font-size:14px;color:#333333;line-height:1.7">${innerHtml}</td></tr>
       <!-- Footer -->
       <tr>
-        <td style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:20px 32px;text-align:center">
-          <p style="margin:0;font-size:11px;color:#9ca3af">${footerText || 'This is an automated message from Aurora University. Please do not reply.'}</p>
-          <p style="margin:6px 0 0;font-size:10px;color:#d1d5db">© ${new Date().getFullYear()} Aurora University. All rights reserved.</p>
+        <td style="background:#f9f9f9;border-top:1px solid #e0e0e0;padding:14px 24px;text-align:center">
+          <p style="margin:0;font-size:11px;color:#999999">${footerText || 'This is an automated message from Aurora University. Please do not reply.'}</p>
         </td>
       </tr>
     </table>
@@ -132,33 +121,10 @@ function renderAttendanceHtml({ ctx, subjects, threshold }) {
 // ─── Circular / Announcement ───────────────────────────────────────────────────
 function renderCircularHtml({ subject, body, ctx, circularNo, category }) {
   const filledBody = fillTemplate(body, ctx);
-  const categoryColors = {
-    circular:     { bg: '#eff6ff', border: '#93c5fd', text: '#1e40af', label: 'Circular'      },
-    announcement: { bg: '#fefce8', border: '#fcd34d', text: '#92400e', label: 'Announcement'  },
-    event:        { bg: '#f0fdf4', border: '#86efac', text: '#166534', label: 'Event Notice'   },
-    exam:         { bg: '#fef2f2', border: '#fca5a5', text: '#991b1b', label: 'Exam Notice'    },
-    holiday:      { bg: '#faf5ff', border: '#c4b5fd', text: '#5b21b6', label: 'Holiday Notice' },
-    fee:          { bg: '#fff7ed', border: '#fed7aa', text: '#9a3412', label: 'Fee Reminder'   },
-    general:      { bg: '#f9fafb', border: '#d1d5db', text: '#374151', label: 'General'        },
-  };
-  const cat = categoryColors[category] || categoryColors.general;
 
   const inner = `
-    <div style="background:${cat.bg};border:1px solid ${cat.border};border-radius:8px;padding:10px 14px;margin-bottom:20px;display:inline-block">
-      <span style="color:${cat.text};font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">${cat.label}</span>
-      ${circularNo ? `<span style="color:${cat.text};font-size:12px;margin-left:12px;opacity:0.8">Ref: ${escapeHtml(circularNo)}</span>` : ''}
-    </div>
-
-    <h2 style="margin:0 0 20px;font-size:20px;color:#111827;font-weight:700;line-height:1.3">${escapeHtml(subject)}</h2>
-
-    <div style="font-size:14px;line-height:1.8;color:#374151">${filledBody}</div>
-
-    ${ctx && ctx.Name ? `
-    <div style="margin-top:24px;background:#f8fafc;border-radius:8px;padding:12px 16px;font-size:12px;color:#6b7280">
-      Addressed to: <strong>${escapeHtml(ctx.Name)}</strong>
-      ${ctx.RegNo ? ` &nbsp;|&nbsp; Reg No: <strong>${escapeHtml(ctx.RegNo)}</strong>` : ''}
-      ${ctx.Section && ctx.Section.toLowerCase() !== 'emails' && ctx.Section.toLowerCase() !== 'email' ? ` &nbsp;|&nbsp; Section: <strong>${escapeHtml(ctx.Section)}</strong>` : ''}
-    </div>` : ''}
+    <p style="margin:0 0 20px 0;font-size:15px;font-weight:600;color:#1a237e">${escapeHtml(subject)}</p>
+    <div style="font-size:14px;line-height:1.8;color:#333333">${filledBody}</div>
   `;
 
   return { html: wrapEmail(inner), text: stripHtml(filledBody) };
