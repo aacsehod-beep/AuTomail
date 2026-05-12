@@ -53,7 +53,7 @@ export default function TemplatesPage() {
   }
 
   return (
-    <div style={{ maxWidth: 900 }}>
+    <div style={{ width: '100%', maxWidth: 1280 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><FileText size={20} /> Email Templates</h1>

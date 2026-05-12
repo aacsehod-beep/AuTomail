@@ -90,7 +90,7 @@ export default function UsersPage() {
   }
 
   return (
-    <div style={{ maxWidth: 860 }}>
+    <div style={{ width: '100%', maxWidth: 1280 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
         <Users size={22} color="#2563eb" />
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#1e293b' }}>Manage Users</h1>

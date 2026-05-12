@@ -38,7 +38,7 @@ export default function SchedulerPage() {
   const STATUS_COLOR = { pending: 'badge-warn', sent: 'badge-success', cancelled: 'badge-gray', failed: 'badge-danger' };
 
   return (
-    <div style={{ maxWidth: 860 }}>
+    <div style={{ width: '100%', maxWidth: 1280 }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Clock size={20} /> Scheduler</h1>
         <p style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>

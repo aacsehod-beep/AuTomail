@@ -86,7 +86,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div style={{ maxWidth: 700 }}>
+    <div style={{ width: '100%', maxWidth: 1280 }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
           <Settings size={20} /> System Settings

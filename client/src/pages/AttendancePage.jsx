@@ -120,7 +120,7 @@ export default function AttendancePage() {
   }
 
   return (
-    <div style={{ maxWidth: 860 }}>
+    <div style={{ width: '100%', maxWidth: 1280 }}>
       <PageHeader title={<><BarChart2 size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} />Attendance Mailer</>} sub="Upload your attendance sheet and send personalized reports to students" />
 
       <div className="card" style={{ marginBottom: 20 }}>

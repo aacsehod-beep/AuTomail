@@ -1,145 +1,188 @@
-﻿import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  TrendingUp, Mail, CheckCircle2, XCircle, Percent,
-  CalendarDays, CalendarRange, Building2, AlertTriangle,
-  BarChart2, Clock, RefreshCw, ArrowRight, Search,
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  Building2,
+  CheckCircle2,
+  Clock3,
+  Mail,
+  Percent,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  Sparkles,
+  Target,
+  Users,
+  XCircle,
 } from 'lucide-react';
 import { api } from '../api';
 
-// --- Helpers ---
 function fmtDate(iso) {
   if (!iso) return '-';
-  return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return new Date(iso).toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
 }
 
-// --- KPI Card ---
-function KpiCard({ icon: Icon, label, value, sub, color, accent }) {
-  const [display, setDisplay] = useState(0);
-  const isNum = typeof value === 'number';
-  useEffect(() => {
-    if (!isNum) return;
-    let start = null;
-    const DURATION = 900;
-    function step(ts) {
-      if (!start) start = ts;
-      const p = Math.min((ts - start) / DURATION, 1);
-      const e = 1 - Math.pow(1 - p, 3);
-      setDisplay(Math.round(e * value));
-      if (p < 1) requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
-  }, [value, isNum]);
+function compactNumber(value) {
+  return new Intl.NumberFormat('en-IN', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(value || 0);
+}
 
+function pct(sent, total) {
+  return total > 0 ? Math.round((sent / total) * 100) : 0;
+}
+
+function healthTone(rate) {
+  if (rate >= 92) return { label: 'Stable', fg: '#166534', bg: '#dcfce7', border: '#86efac' };
+  if (rate >= 75) return { label: 'Watch', fg: '#92400e', bg: '#fef3c7', border: '#fcd34d' };
+  return { label: 'Critical', fg: '#991b1b', bg: '#fee2e2', border: '#fca5a5' };
+}
+
+function typeTone(type) {
+  const map = {
+    attendance: { bg: '#dbeafe', fg: '#1d4ed8' },
+    circular: { bg: '#fef3c7', fg: '#a16207' },
+    announcement: { bg: '#ede9fe', fg: '#6d28d9' },
+    event: { bg: '#cffafe', fg: '#0f766e' },
+    exam: { bg: '#fee2e2', fg: '#b91c1c' },
+    fee: { bg: '#dcfce7', fg: '#15803d' },
+    fee_reminder: { bg: '#fce7f3', fg: '#9d174d' },
+    general: { bg: '#e2e8f0', fg: '#475569' },
+    custom: { bg: '#dbeafe', fg: '#1e40af' },
+  };
+  return map[type] || { bg: '#e2e8f0', fg: '#475569' };
+}
+
+function StatChip({ icon: Icon, label, value, tone = '#2563eb' }) {
   return (
     <div style={{
-      background: '#fff', borderRadius: 14, padding: '20px 22px',
-      border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-      display: 'flex', alignItems: 'flex-start', gap: 16,
+      padding: '16px 18px',
+      borderRadius: 18,
+      background: '#f8fbff',
+      border: '1px solid #dbeafe',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
     }}>
       <div style={{
-        width: 46, height: 46, borderRadius: 12, flexShrink: 0,
-        background: accent || '#eff6ff',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: 38,
+        height: 38,
+        borderRadius: 12,
+        background: 'rgba(37,99,235,0.08)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
       }}>
-        <Icon size={20} color={color || '#2563eb'} />
+        <Icon size={18} color={tone} />
       </div>
       <div>
-        <div style={{ fontSize: 26, fontWeight: 800, color: color || '#0f172a', lineHeight: 1.1 }}>
-          {isNum ? display : value}
+        <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
+        <div style={{ color: '#0f172a', fontSize: 22, fontWeight: 700, lineHeight: 1.1 }}>{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function SectionMeter({ item }) {
+  const total = item.sent + item.failed;
+  const rate = pct(item.sent, total);
+  const tone = healthTone(rate);
+  return (
+    <div style={{ padding: '12px 0', borderBottom: '1px solid #e2e8f0' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
+        <div>
+          <div style={{ fontWeight: 600, color: '#0f172a', fontSize: 13 }}>{item.section}</div>
+          <div style={{ color: '#64748b', fontSize: 11 }}>{item.sent} sent, {item.failed} failed</div>
         </div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginTop: 3 }}>{label}</div>
-        {sub && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{sub}</div>}
-      </div>
-    </div>
-  );
-}
-
-// --- Section Bar Row ---
-function SectionRow({ section, sent, failed }) {
-  const total = sent + failed;
-  const pct   = total > 0 ? Math.round((sent / total) * 100) : 0;
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-        <span style={{ fontWeight: 600 }}>{section}</span>
-        <span style={{ color: '#64748b' }}>{sent}/{total} &nbsp;
-          <span style={{ fontWeight: 700, color: pct >= 90 ? '#16a34a' : pct >= 70 ? '#d97706' : '#dc2626' }}>{pct}%</span>
-        </span>
-      </div>
-      <div style={{ height: 7, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
         <div style={{
-          height: '100%', borderRadius: 4,
-          width: pct + '%',
-          background: pct >= 90 ? '#16a34a' : pct >= 70 ? '#f59e0b' : '#ef4444',
-          transition: 'width 0.8s ease',
-        }} />
+          alignSelf: 'flex-start',
+          fontSize: 11,
+          fontWeight: 700,
+          padding: '4px 8px',
+          borderRadius: 999,
+          color: tone.fg,
+          background: tone.bg,
+        }}>
+          {rate}%
+        </div>
+      </div>
+      <div style={{ height: 8, background: '#e2e8f0', borderRadius: 999, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${rate}%`, background: `linear-gradient(90deg, ${tone.border}, ${tone.fg})` }} />
       </div>
     </div>
   );
 }
 
-// --- Trend Chart ---
-function TrendChart({ data }) {
-  const days = [];
+function TrendBars({ data }) {
+  const points = [];
   for (let i = 13; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
-    const row = data.find(r => r.day === key) || { day: key, sent: 0, failed: 0 };
-    days.push(row);
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const key = date.toISOString().slice(0, 10);
+    const row = data.find(entry => entry.day === key) || { day: key, sent: 0, failed: 0 };
+    points.push(row);
   }
-  const CHART_H = 110;
-  const maxVal  = Math.max(...days.map(d => d.sent + d.failed), 1);
+  const max = Math.max(...points.map(point => point.sent + point.failed), 1);
 
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, minWidth: 420, paddingBottom: 28 }}>
-        {days.map(d => {
-          const total = d.sent + d.failed;
-          const sentH = Math.round((d.sent   / maxVal) * CHART_H);
-          const failH = Math.round((d.failed / maxVal) * CHART_H);
-          const label = d.day.slice(5);
-          return (
-            <div key={d.day} title={`${d.day}  Sent: ${d.sent}  Failed: ${d.failed}`}
-              style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
-              <div style={{ fontSize: 9, color: '#94a3b8', height: 14, lineHeight: '14px' }}>
-                {total > 0 ? total : ''}
-              </div>
-              <div style={{ height: CHART_H, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', width: '80%', minWidth: 10 }}>
-                {failH > 0 && <div style={{ background: '#fca5a5', height: failH, width: '100%', borderRadius: '3px 3px 0 0' }} />}
-                {sentH > 0 && <div style={{ background: '#2563eb', height: sentH, width: '100%', borderRadius: failH === 0 ? '3px 3px 0 0' : 0 }} />}
-                {total === 0 && <div style={{ height: 2, background: '#e2e8f0', width: '100%', borderRadius: 1 }} />}
-              </div>
-              <div style={{
-                position: 'absolute', bottom: -22, fontSize: 9, color: '#94a3b8',
-                transform: 'rotate(-45deg)', transformOrigin: 'top center', whiteSpace: 'nowrap',
-              }}>{label}</div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(14, minmax(0, 1fr))', gap: 10, alignItems: 'end', minHeight: 220 }}>
+      {points.map(point => {
+        const total = point.sent + point.failed;
+        const sentHeight = Math.max(8, Math.round((point.sent / max) * 130));
+        const failedHeight = point.failed > 0 ? Math.max(6, Math.round((point.failed / max) * 56)) : 0;
+        return (
+          <div key={point.day} title={`${point.day} | Sent ${point.sent} | Failed ${point.failed}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', minHeight: 14 }}>{total > 0 ? total : ''}</div>
+            <div style={{ width: '100%', maxWidth: 36, height: 150, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 3 }}>
+              {failedHeight > 0 && <div style={{ height: failedHeight, borderRadius: 10, background: 'linear-gradient(180deg, #fca5a5, #ef4444)' }} />}
+              <div style={{ height: sentHeight, borderRadius: 12, background: 'linear-gradient(180deg, #60a5fa, #1d4ed8)' }} />
             </div>
-          );
-        })}
-      </div>
+            <div style={{ fontSize: 10, color: '#94a3b8' }}>{point.day.slice(5)}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-// --- Type Badge Colors ---
-const TYPE_COLORS = {
-  attendance:   { bg: '#dbeafe', color: '#1d4ed8' },
-  circular:     { bg: '#fef9c3', color: '#a16207' },
-  announcement: { bg: '#fef3c7', color: '#b45309' },
-  event:        { bg: '#ede9fe', color: '#7c3aed' },
-  exam:         { bg: '#fee2e2', color: '#b91c1c' },
-  fee:          { bg: '#dcfce7', color: '#15803d' },
-  fee_reminder: { bg: '#fce7f3', color: '#9d174d' },
-  general:      { bg: '#f1f5f9', color: '#475569' },
-  custom:       { bg: '#f0fdf4', color: '#166534' },
-};
+function SchoolCard({ item, onSelect }) {
+  const tone = healthTone(item.successRate);
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect?.(item.school)}
+      style={{
+        textAlign: 'left',
+        width: '100%',
+        padding: 18,
+        borderRadius: 18,
+        border: '1px solid #dbeafe',
+        background: 'linear-gradient(180deg, #ffffff, #f8fbff)',
+        cursor: 'pointer',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, color: '#0f172a' }}>{item.school}</div>
+        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 8px', borderRadius: 999, background: tone.bg, color: tone.fg }}>{item.successRate}%</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 10 }}>
+        <div><div style={schoolMiniLabel}>Total</div><div style={schoolMiniVal}>{item.total}</div></div>
+        <div><div style={schoolMiniLabel}>Today</div><div style={schoolMiniVal}>{item.sentToday}</div></div>
+        <div><div style={schoolMiniLabel}>Week</div><div style={schoolMiniVal}>{item.sentWeek}</div></div>
+      </div>
+      <div style={{ fontSize: 11, color: '#64748b' }}>Last activity: {fmtDate(item.lastActivityAt)}</div>
+    </button>
+  );
+}
 
-// --- Main Page ---
 export default function StatsPage({ onNavigate, schoolView, onSchoolViewChange }) {
-  const [stats,   setStats]   = useState(null);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState('');
+  const [error, setError] = useState('');
   const [historyQuery, setHistoryQuery] = useState('');
   const [historyData, setHistoryData] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -147,11 +190,13 @@ export default function StatsPage({ onNavigate, schoolView, onSchoolViewChange }
 
   function load() {
     setLoading(true);
+    setError('');
     api.getStats(schoolView)
       .then(setStats)
-      .catch(e => setError(e.message))
+      .catch(e => setError(e.message || 'Failed to load dashboard'))
       .finally(() => setLoading(false));
   }
+
   useEffect(load, [schoolView]);
 
   async function searchRecipientHistory() {
@@ -176,264 +221,325 @@ export default function StatsPage({ onNavigate, schoolView, onSchoolViewChange }
     }
   }
 
+  const derived = useMemo(() => {
+    if (!stats) return null;
+
+    const sections = (stats.bySec || []).reduce((acc, row) => {
+      const existing = acc[row.section] || { section: row.section, sent: 0, failed: 0 };
+      if (row.status === 'SENT') existing.sent += row.cnt;
+      if (row.status === 'FAILED') existing.failed += row.cnt;
+      acc[row.section] = existing;
+      return acc;
+    }, {});
+
+    const sectionRows = Object.values(sections)
+      .filter(item => item.section)
+      .sort((a, b) => (b.sent + b.failed) - (a.sent + a.failed));
+
+    const types = (stats.byType || []).reduce((acc, row) => {
+      const entry = acc[row.type] || { type: row.type, sent: 0, failed: 0 };
+      if (row.status === 'SENT') entry.sent += row.cnt;
+      if (row.status === 'FAILED') entry.failed += row.cnt;
+      acc[row.type] = entry;
+      return acc;
+    }, {});
+
+    const typeRows = Object.values(types)
+      .sort((a, b) => (b.sent + b.failed) - (a.sent + a.failed));
+
+    const failureRate = stats.total > 0 ? Math.round((stats.failed / stats.total) * 100) : 0;
+    const health = healthTone(stats.successRate || 0);
+    const headline = stats.failed > 0
+      ? `${stats.failed} failed deliveries need attention.`
+      : 'Delivery pipeline is clean right now.';
+
+    const recommendation = stats.successRate < 75
+      ? 'Investigate failed recipients and recent jobs before the next campaign.'
+      : stats.sentToday > 0
+        ? 'Today is active. Use recent jobs and recipient history to spot repeat failures.'
+        : 'No campaign activity today. Use templates and scheduler to stage the next send.';
+
+    return { sectionRows, typeRows, failureRate, health, headline, recommendation };
+  }, [stats]);
+
   if (loading) return <div className="alert alert-info">Loading dashboard...</div>;
-  if (error)   return <div className="alert alert-error">{error}</div>;
-  if (!stats)  return null;
-
-  const successColor = stats.successRate >= 90 ? '#16a34a' : stats.successRate >= 70 ? '#d97706' : '#dc2626';
-  const successAccent = stats.successRate >= 90 ? '#dcfce7' : stats.successRate >= 70 ? '#fef9c3' : '#fee2e2';
-
-  // Section rows
-  const secRows = (stats.bySec || []).reduce((acc, row) => {
-    const ex = acc.find(r => r.section === row.section);
-    if (ex) {
-      if (row.status === 'SENT')   ex.sent   += row.cnt;
-      if (row.status === 'FAILED') ex.failed += row.cnt;
-    } else {
-      acc.push({ section: row.section, sent: row.status === 'SENT' ? row.cnt : 0, failed: row.status === 'FAILED' ? row.cnt : 0 });
-    }
-    return acc;
-  }, []).sort((a, b) => (b.sent + b.failed) - (a.sent + a.failed));
-
-  // Type breakdown
-  const typeMap = {};
-  (stats.byType || []).forEach(r => {
-    if (!typeMap[r.type]) typeMap[r.type] = { sent: 0, failed: 0 };
-    if (r.status === 'SENT')   typeMap[r.type].sent   = r.cnt;
-    if (r.status === 'FAILED') typeMap[r.type].failed = r.cnt;
-  });
-  const typeEntries = Object.entries(typeMap).sort((a, b) => (b[1].sent + b[1].failed) - (a[1].sent + a[1].failed));
-  const schoolBreakdown = (stats.schoolBreakdown || []);
+  if (error) return <div className="alert alert-error">{error}</div>;
+  if (!stats || !derived) return null;
 
   return (
-    <div style={{ maxWidth: 1140 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <TrendingUp size={20} /> Dashboard
-          </h1>
-          <p style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>
-            {schoolView
-              ? <><span style={{ background: '#eff6ff', color: '#2563eb', padding: '2px 8px', borderRadius: 12, fontSize: 12, fontWeight: 700 }}>{schoolView}</span> &nbsp;- filtered view</>
-              : 'Aurora University - Email Campaign Overview'}
-          </p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {schoolView && (
-            <button className="btn btn-ghost" onClick={() => onSchoolViewChange?.(null)}
-              style={{ fontSize: 12 }}>
-              Show All Schools
-            </button>
-          )}
-          <button className="btn btn-ghost" onClick={load}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-            <RefreshCw size={14} /> Refresh
-          </button>
-        </div>
-      </div>
+    <div style={{ maxWidth: 1280, paddingBottom: 24 }}>
+      <section style={{
+        borderRadius: 28,
+        overflow: 'hidden',
+        background: 'linear-gradient(135deg, #f8fbff 0%, #eef4ff 48%, #dbeafe 100%)',
+        border: '1px solid #dbeafe',
+        boxShadow: '0 20px 50px rgba(37,99,235,0.12)',
+        marginBottom: 20,
+      }}>
+        <div style={{ padding: '28px 28px 18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 22 }}>
+            <div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderRadius: 999, background: '#dbeafe', color: '#1d4ed8', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+                <Sparkles size={14} /> Operations cockpit
+              </div>
+              <h1 style={{ color: '#0f172a', fontSize: 'clamp(1.9rem, 4vw, 3rem)', lineHeight: 1, letterSpacing: '-0.05em', marginBottom: 10, fontWeight: 700 }}>
+                {schoolView ? `${schoolView} dashboard` : 'Aurora delivery command center'}
+              </h1>
+              <p style={{ color: '#475569', maxWidth: 720, fontSize: 14 }}>
+                A live view of sending health, campaign mix, delivery risk, and recipient intelligence.
+              </p>
+            </div>
 
-      {/* Row 1: KPI Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 1fr))', gap: 14, marginBottom: 20 }}>
-        <KpiCard icon={Mail}         label="Total Emails"   value={stats.total}       color="#2563eb" accent="#eff6ff" />
-        <KpiCard icon={CheckCircle2} label="Delivered"      value={stats.sent}        color="#16a34a" accent="#dcfce7" />
-        <KpiCard icon={XCircle}      label="Failed"         value={stats.failed}      color="#dc2626" accent="#fee2e2" />
-        <KpiCard icon={Percent}      label="Success Rate"   value={stats.successRate + '%'} color={successColor} accent={successAccent} />
-        <KpiCard icon={CalendarDays} label="Sent Today"     value={stats.sentToday}   color="#7c3aed" accent="#ede9fe" />
-        <KpiCard icon={CalendarRange}label="Sent This Week" value={stats.sentWeek}    color="#0891b2" accent="#e0f2fe" />
-      </div>
-
-      {/* Superadmin: school-level drill-down */}
-      {schoolBreakdown.length > 0 && !schoolView && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h3 style={{ ...sh3, marginBottom: 0 }}><Building2 size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />School Overview (Drill-down)</h3>
-            <div style={{ fontSize: 11, color: '#64748b' }}>Click a school to open its dashboard</div>
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>School</th><th>Total</th><th>Sent</th><th>Failed</th><th>Success</th><th>Today</th><th>This Week</th><th>Last Activity</th><th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {schoolBreakdown.map(s => (
-                  <tr key={s.school}>
-                    <td style={{ fontWeight: 700 }}>{s.school}</td>
-                    <td>{s.total}</td>
-                    <td style={{ color: '#16a34a', fontWeight: 700 }}>{s.sent}</td>
-                    <td style={{ color: s.failed > 0 ? '#dc2626' : '#94a3b8', fontWeight: s.failed > 0 ? 700 : 400 }}>{s.failed}</td>
-                    <td>
-                      <span style={{
-                        background: s.successRate >= 90 ? '#dcfce7' : s.successRate >= 70 ? '#fef9c3' : '#fee2e2',
-                        color: s.successRate >= 90 ? '#15803d' : s.successRate >= 70 ? '#92400e' : '#b91c1c',
-                        borderRadius: 6, padding: '2px 8px', fontWeight: 700, fontSize: 12,
-                      }}>{s.successRate}%</span>
-                    </td>
-                    <td>{s.sentToday}</td>
-                    <td>{s.sentWeek}</td>
-                    <td style={{ fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>{fmtDate(s.lastActivityAt)}</td>
-                    <td>
-                      <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => onSchoolViewChange?.(s.school)}>
-                        Drill Down
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Row 2: Trend + Top Section */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 16 }}>
-        {/* 14-Day Trend */}
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <h3 style={sh3}><BarChart2 size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />14-Day Send Trend</h3>
-            <div style={{ display: 'flex', gap: 14, fontSize: 11, color: '#64748b' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 10, height: 10, background: '#2563eb', borderRadius: 2, display: 'inline-block' }} /> Sent
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 10, height: 10, background: '#fca5a5', borderRadius: 2, display: 'inline-block' }} /> Failed
-              </span>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              {schoolView && (
+                <button className="btn btn-ghost" onClick={() => onSchoolViewChange?.(null)} style={heroGhostBtn}>
+                  Show all schools
+                </button>
+              )}
+              <button className="btn btn-ghost" onClick={load} style={heroGhostBtn}>
+                <RefreshCw size={14} /> Refresh
+              </button>
             </div>
           </div>
-          <TrendChart data={stats.trend || []} />
-        </div>
 
-        {/* Quick Stats + Top Section */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* Most Active Section */}
-          <div className="card" style={{ flex: 1 }}>
-            <h3 style={sh3}><Building2 size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Most Active Section</h3>
-            {stats.topSection ? (
-              <div style={{ textAlign: 'center', padding: '12px 0' }}>
-                <div style={{ fontSize: 28, fontWeight: 800, color: '#1e3a8a' }}>{stats.topSection.section}</div>
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{stats.topSection.cnt} emails sent</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.9fr', gap: 16, alignItems: 'stretch' }}>
+            <div style={{
+              padding: 22,
+              borderRadius: 24,
+              background: 'linear-gradient(180deg, #ffffff, #f8fbff)',
+              border: '1px solid #dbeafe',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
+                <div>
+                  <div style={{ color: '#64748b', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Delivery health</div>
+                  <div style={{ color: '#0f172a', fontSize: 26, fontWeight: 700 }}>{derived.headline}</div>
+                </div>
+                <div style={{
+                  alignSelf: 'flex-start',
+                  padding: '8px 12px',
+                  borderRadius: 999,
+                  background: derived.health.bg,
+                  color: derived.health.fg,
+                  fontWeight: 700,
+                  fontSize: 12,
+                }}>
+                  {derived.health.label}
+                </div>
               </div>
-            ) : (
-              <p style={{ color: '#94a3b8', fontSize: 13 }}>No data yet</p>
-            )}
-          </div>
 
-          {/* Top Failed Recipients */}
-          {(stats.topFailed || []).length > 0 && (
-            <div className="card" style={{ flex: 2 }}>
-              <h3 style={sh3}><AlertTriangle size={14} style={{ verticalAlign: 'middle', marginRight: 6, color: '#f59e0b' }} />Top Failed Recipients</h3>
-              {(stats.topFailed || []).map(r => (
-                <div key={r.recipient} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f1f5f9' }}>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>{r.name || r.recipient}</div>
-                    {r.name && <div style={{ fontSize: 11, color: '#94a3b8' }}>{r.recipient}</div>}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
+                <StatChip icon={Mail} label="Total volume" value={compactNumber(stats.total)} tone="#93c5fd" />
+                <StatChip icon={CheckCircle2} label="Delivered" value={compactNumber(stats.sent)} tone="#4ade80" />
+                <StatChip icon={XCircle} label="Failed" value={compactNumber(stats.failed)} tone="#fca5a5" />
+                <StatChip icon={Clock3} label="Today" value={compactNumber(stats.sentToday)} tone="#c4b5fd" />
+              </div>
+            </div>
+
+            <div style={{
+              padding: 22,
+              borderRadius: 24,
+              background: 'linear-gradient(180deg, #eff6ff, #dbeafe)',
+              border: '1px solid #bfdbfe',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              gap: 16,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{ position: 'relative', width: 94, height: 94, borderRadius: '50%', background: `conic-gradient(#2563eb 0 ${stats.successRate}%, rgba(37,99,235,0.14) ${stats.successRate}% 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ width: 68, height: 68, borderRadius: '50%', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f172a', fontSize: 20, fontWeight: 700 }}>
+                    {stats.successRate}%
                   </div>
-                  <span style={{ background: '#fee2e2', color: '#b91c1c', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 8px' }}>
-                    {r.cnt}Ã—
+                </div>
+                <div>
+                  <div style={{ color: '#64748b', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Success rate</div>
+                  <div style={{ color: '#0f172a', fontSize: 28, fontWeight: 700, lineHeight: 1.1 }}>{stats.successRate}%</div>
+                  <div style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>Failure rate: {derived.failureRate}%</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div style={signalRow}><Percent size={14} color="#93c5fd" /> Weekly throughput <strong>{compactNumber(stats.sentWeek)}</strong></div>
+                <div style={signalRow}><Target size={14} color="#fcd34d" /> Recommendation: <span>{derived.recommendation}</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {!schoolView && (stats.schoolBreakdown || []).length > 0 && (
+        <section style={{ marginBottom: 20 }}>
+          <div style={sectionHeader}>
+            <div>
+              <div style={sectionEyebrow}>School network</div>
+              <h2 style={sectionTitle}><Building2 size={18} /> School activity</h2>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+            {stats.schoolBreakdown.map(item => (
+              <SchoolCard key={item.school} item={item} onSelect={onSchoolViewChange} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 0.9fr', gap: 18, marginBottom: 20 }}>
+        <section style={panelCard}>
+          <div style={sectionHeader}>
+            <div>
+              <div style={sectionEyebrow}>Pattern scan</div>
+              <h2 style={sectionTitle}><BarChart3 size={18} /> 14 day campaign rhythm</h2>
+            </div>
+            <div style={{ display: 'flex', gap: 14, fontSize: 11, color: '#64748b' }}>
+              <span style={legendItem}><span style={{ ...legendDot, background: '#2563eb' }} />Sent</span>
+              <span style={legendItem}><span style={{ ...legendDot, background: '#ef4444' }} />Failed</span>
+            </div>
+          </div>
+          <TrendBars data={stats.trend || []} />
+        </section>
+
+        <section style={panelCard}>
+          <div style={sectionHeader}>
+            <div>
+              <div style={sectionEyebrow}>Risk watch</div>
+              <h2 style={sectionTitle}><ShieldAlert size={18} /> Failure hotspots</h2>
+            </div>
+          </div>
+          {(stats.topFailed || []).length === 0 ? (
+            <div style={emptyState}>No repeated failed recipients right now.</div>
+          ) : (
+            <div>
+              {(stats.topFailed || []).map(item => (
+                <div key={item.recipient} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #e2e8f0' }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: '#0f172a', fontSize: 13 }}>{item.name || item.recipient}</div>
+                    {item.name && <div style={{ color: '#64748b', fontSize: 11 }}>{item.recipient}</div>}
+                  </div>
+                  <span style={{ background: '#fee2e2', color: '#b91c1c', borderRadius: 999, padding: '5px 10px', fontSize: 11, fontWeight: 700 }}>
+                    {item.cnt}x
                   </span>
                 </div>
               ))}
             </div>
           )}
-        </div>
+        </section>
       </div>
 
-      {/* Row 3: By Type + By Section */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        {/* Mail Type Breakdown */}
-        <div className="card">
-          <h3 style={sh3}><Mail size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />By Mail Type</h3>
-          {typeEntries.length === 0 && <p style={{ color: '#94a3b8', fontSize: 13 }}>No data yet</p>}
-          {typeEntries.map(([type, v]) => {
-            const total = v.sent + v.failed;
-            const pct   = total > 0 ? Math.round((v.sent / total) * 100) : 0;
-            const c     = TYPE_COLORS[type] || { bg: '#f1f5f9', color: '#475569' };
-            return (
-              <div key={type} style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ background: c.bg, color: c.color, borderRadius: 5, padding: '1px 7px', fontWeight: 600, fontSize: 11, textTransform: 'capitalize' }}>{type}</span>
-                    <span style={{ color: '#94a3b8' }}>{total} emails</span>
-                  </span>
-                  <span style={{ fontWeight: 700, color: pct >= 90 ? '#16a34a' : pct >= 70 ? '#d97706' : '#dc2626' }}>{pct}%</span>
-                </div>
-                <div style={{ height: 7, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', borderRadius: 4, width: pct + '%', background: pct >= 90 ? '#16a34a' : pct >= 70 ? '#f59e0b' : '#ef4444', transition: 'width 0.8s ease' }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Section Breakdown */}
-        <div className="card">
-          <h3 style={sh3}><Building2 size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />By Section</h3>
-          {secRows.length === 0 && <p style={{ color: '#94a3b8', fontSize: 13 }}>No section data yet</p>}
-          {secRows.slice(0, 10).map(r => (
-            <SectionRow key={r.section} {...r} />
-          ))}
-          {secRows.length > 10 && (
-            <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>+{secRows.length - 10} more sections</p>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginBottom: 20 }}>
+        <section style={panelCard}>
+          <div style={sectionHeader}>
+            <div>
+              <div style={sectionEyebrow}>Composition</div>
+              <h2 style={sectionTitle}><Mail size={18} /> Delivery mix by mail type</h2>
+            </div>
+          </div>
+          {derived.typeRows.length === 0 ? (
+            <div style={emptyState}>No mail type data available yet.</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 12 }}>
+              {derived.typeRows.map(item => {
+                const total = item.sent + item.failed;
+                const rate = pct(item.sent, total);
+                const tone = typeTone(item.type);
+                return (
+                  <div key={item.type} style={{ padding: 14, borderRadius: 16, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ background: tone.bg, color: tone.fg, borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700, textTransform: 'capitalize' }}>{item.type}</span>
+                        <span style={{ fontSize: 11, color: '#64748b' }}>{total} emails</span>
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{rate}%</div>
+                    </div>
+                    <div style={{ height: 8, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' }}>
+                      <div style={{ width: `${rate}%`, height: '100%', background: `linear-gradient(90deg, ${tone.fg}, #0f172a)` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
-        </div>
+        </section>
+
+        <section style={panelCard}>
+          <div style={sectionHeader}>
+            <div>
+              <div style={sectionEyebrow}>Reliability leaderboard</div>
+              <h2 style={sectionTitle}><Users size={18} /> Section performance</h2>
+            </div>
+          </div>
+          {derived.sectionRows.length === 0 ? (
+            <div style={emptyState}>No section data available yet.</div>
+          ) : (
+            <div>
+              {derived.sectionRows.slice(0, 8).map(item => <SectionMeter key={item.section} item={item} />)}
+            </div>
+          )}
+        </section>
       </div>
 
-      {/* Row 4: Recent Jobs */}
-      {(stats.recentJobs || []).length > 0 && (
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <h3 style={{ ...sh3, marginBottom: 0 }}><Clock size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Recent Jobs</h3>
-            <button className="btn btn-ghost" onClick={() => onNavigate && onNavigate('logs')}
-              style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-              View all logs <ArrowRight size={13} />
-            </button>
+      <section style={{ ...panelCard, marginBottom: 20 }}>
+        <div style={sectionHeader}>
+          <div>
+            <div style={sectionEyebrow}>Execution flow</div>
+            <h2 style={sectionTitle}><Clock3 size={18} /> Recent jobs</h2>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="table">
-              <thead>
-                <tr><th>Started</th><th>Type</th><th>Sent</th><th>Failed</th><th>Total</th><th>Rate</th><th>Job ID</th></tr>
-              </thead>
-              <tbody>
-                {(stats.recentJobs || []).map(c => {
-                  const pct = c.total > 0 ? Math.round((c.sent / c.total) * 100) : 0;
-                  const tc  = TYPE_COLORS[c.type] || { bg: '#f1f5f9', color: '#475569' };
-                  return (
-                    <tr key={c.job_id}>
-                      <td style={{ fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>{fmtDate(c.started_at)}</td>
-                      <td>
-                        <span style={{ background: tc.bg, color: tc.color, borderRadius: 5, padding: '2px 8px', fontWeight: 600, fontSize: 11, textTransform: 'capitalize' }}>
-                          {c.type}
-                        </span>
-                      </td>
-                      <td style={{ color: '#16a34a', fontWeight: 700 }}>{c.sent}</td>
-                      <td style={{ color: c.failed > 0 ? '#dc2626' : '#94a3b8', fontWeight: c.failed > 0 ? 700 : 400 }}>{c.failed}</td>
-                      <td>{c.total}</td>
-                      <td>
-                        <span style={{
-                          background: pct >= 90 ? '#dcfce7' : pct >= 70 ? '#fef9c3' : '#fee2e2',
-                          color:      pct >= 90 ? '#15803d' : pct >= 70 ? '#92400e' : '#b91c1c',
-                          borderRadius: 6, padding: '2px 8px', fontWeight: 700, fontSize: 12,
-                        }}>{pct}%</span>
-                      </td>
-                      <td style={{ fontSize: 10, color: '#94a3b8', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.job_id}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <button className="btn btn-ghost" onClick={() => onNavigate?.('logs')}>
+            View all logs <ArrowRight size={14} />
+          </button>
         </div>
-      )}
 
-      {/* Recipient History */}
-      <div className="card" style={{ marginTop: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <h3 style={{ ...sh3, marginBottom: 0 }}>
-            <Search size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Recipient History View
-          </h3>
-          <div style={{ display: 'flex', gap: 8, width: 'min(560px, 100%)' }}>
+        {(stats.recentJobs || []).length === 0 ? (
+          <div style={emptyState}>No jobs have been recorded yet.</div>
+        ) : (
+          <div style={{ display: 'grid', gap: 12 }}>
+            {(stats.recentJobs || []).map(item => {
+              const total = item.total || 0;
+              const rate = pct(item.sent, total);
+              const tone = typeTone(item.type);
+              return (
+                <div key={item.job_id} style={{
+                  padding: 16,
+                  borderRadius: 18,
+                  border: '1px solid #e2e8f0',
+                  background: 'linear-gradient(180deg, #ffffff, #f8fafc)',
+                  display: 'grid',
+                  gridTemplateColumns: '1.2fr 1fr 1fr auto',
+                  gap: 14,
+                  alignItems: 'center',
+                }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{ background: tone.bg, color: tone.fg, borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700, textTransform: 'capitalize' }}>{item.type}</span>
+                      <span style={{ color: '#64748b', fontSize: 11 }}>{fmtDate(item.started_at)}</span>
+                    </div>
+                    <div style={{ color: '#64748b', fontSize: 11 }}>Job ID: {item.job_id}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <div><div style={schoolMiniLabel}>Sent</div><div style={{ ...schoolMiniVal, color: '#16a34a' }}>{item.sent}</div></div>
+                    <div><div style={schoolMiniLabel}>Failed</div><div style={{ ...schoolMiniVal, color: item.failed ? '#dc2626' : '#64748b' }}>{item.failed}</div></div>
+                    <div><div style={schoolMiniLabel}>Total</div><div style={schoolMiniVal}>{total}</div></div>
+                  </div>
+                  <div>
+                    <div style={schoolMiniLabel}>Success</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#0f172a' }}>{rate}%</div>
+                  </div>
+                  <div style={{ width: 70, height: 70, borderRadius: '50%', background: `conic-gradient(#2563eb 0 ${rate}%, #e2e8f0 ${rate}% 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{rate}%</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section style={panelCard}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
+          <div>
+            <div style={sectionEyebrow}>Recipient intelligence</div>
+            <h2 style={sectionTitle}><Search size={18} /> History explorer</h2>
+          </div>
+          <div style={{ display: 'flex', gap: 8, width: 'min(620px, 100%)' }}>
             <input
               className="form-control"
               placeholder="Search by email, name, or reg no"
@@ -441,25 +547,25 @@ export default function StatsPage({ onNavigate, schoolView, onSchoolViewChange }
               onChange={e => setHistoryQuery(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') searchRecipientHistory(); }}
             />
-            <button className="btn btn-outline" onClick={searchRecipientHistory} disabled={historyLoading}>
+            <button className="btn btn-primary" onClick={searchRecipientHistory} disabled={historyLoading}>
               {historyLoading ? 'Searching...' : 'Search'}
             </button>
           </div>
         </div>
 
-        {historyError && <div className="alert alert-error" style={{ marginBottom: 10 }}>{historyError}</div>}
+        {historyError && <div className="alert alert-error" style={{ marginBottom: 12 }}>{historyError}</div>}
 
         {historyData?.summary && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 12 }}>
-            <div style={miniCard}><div style={miniLabel}>Total</div><div style={miniVal}>{historyData.summary.total}</div></div>
-            <div style={miniCard}><div style={miniLabel}>Sent</div><div style={{ ...miniVal, color: '#16a34a' }}>{historyData.summary.sent}</div></div>
-            <div style={miniCard}><div style={miniLabel}>Failed</div><div style={{ ...miniVal, color: '#dc2626' }}>{historyData.summary.failed}</div></div>
-            <div style={miniCard}><div style={miniLabel}>Last Sent</div><div style={{ ...miniVal, fontSize: 12 }}>{fmtDate(historyData.summary.lastSentAt)}</div></div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 14 }}>
+            <div style={intelStat}><div style={schoolMiniLabel}>Total records</div><div style={intelVal}>{historyData.summary.total}</div></div>
+            <div style={intelStat}><div style={schoolMiniLabel}>Delivered</div><div style={{ ...intelVal, color: '#15803d' }}>{historyData.summary.sent}</div></div>
+            <div style={intelStat}><div style={schoolMiniLabel}>Failed</div><div style={{ ...intelVal, color: '#b91c1c' }}>{historyData.summary.failed}</div></div>
+            <div style={intelStat}><div style={schoolMiniLabel}>Last sent</div><div style={{ ...intelVal, fontSize: 13 }}>{fmtDate(historyData.summary.lastSentAt)}</div></div>
           </div>
         )}
 
         {!historyLoading && historyData && (
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 18 }}>
             <table className="table">
               <thead>
                 <tr>
@@ -467,53 +573,135 @@ export default function StatsPage({ onNavigate, schoolView, onSchoolViewChange }
                 </tr>
               </thead>
               <tbody>
-                {(historyData.rows || []).map(r => (
-                  <tr key={`${r.school}-${r.id}`}>
-                    <td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{fmtDate(r.sent_at)}</td>
-                    <td style={{ fontSize: 12 }}>{r.recipient}</td>
-                    <td style={{ fontSize: 12 }}>{r.name || '-'}</td>
-                    <td style={{ fontSize: 12 }}>{r.reg_no || '-'}</td>
-                    <td style={{ fontSize: 12, textTransform: 'capitalize' }}>{r.type}</td>
+                {(historyData.rows || []).map(row => (
+                  <tr key={`${row.school}-${row.id}`}>
+                    <td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{fmtDate(row.sent_at)}</td>
+                    <td style={{ fontSize: 12 }}>{row.recipient}</td>
+                    <td style={{ fontSize: 12 }}>{row.name || '-'}</td>
+                    <td style={{ fontSize: 12 }}>{row.reg_no || '-'}</td>
                     <td>
-                      <span className={r.status === 'SENT' ? 'badge badge-success' : 'badge badge-danger'}>{r.status}</span>
+                      <span style={{ ...pillStyle, ...typeTone(row.type) }}>{row.type}</span>
                     </td>
-                    <td style={{ fontSize: 12 }}>{r.section || '-'}</td>
-                    <td style={{ fontSize: 12 }}>{r.school || '-'}</td>
-                    <td style={{ fontSize: 11, color: '#64748b' }}>{r.job_id}</td>
+                    <td>
+                      <span className={row.status === 'SENT' ? 'badge badge-success' : 'badge badge-danger'}>{row.status}</span>
+                    </td>
+                    <td style={{ fontSize: 12 }}>{row.section || '-'}</td>
+                    <td style={{ fontSize: 12 }}>{row.school || '-'}</td>
+                    <td style={{ fontSize: 11, color: '#64748b' }}>{row.job_id}</td>
                   </tr>
                 ))}
                 {(!historyData.rows || historyData.rows.length === 0) && (
-                  <tr><td colSpan={9} style={{ color: '#94a3b8', textAlign: 'center' }}>No history found for this recipient.</td></tr>
+                  <tr>
+                    <td colSpan={9} style={{ textAlign: 'center', color: '#94a3b8' }}>No history found for this recipient.</td>
+                  </tr>
                 )}
               </tbody>
             </table>
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }
 
-const sh3 = {
-  fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 14,
-  display: 'flex', alignItems: 'center',
+const heroGhostBtn = {
+  background: '#ffffff',
+  color: '#1d4ed8',
+  border: '1px solid #bfdbfe',
 };
 
-const miniCard = {
+const signalRow = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  color: '#334155',
+  fontSize: 12,
+};
+
+const panelCard = {
+  background: 'linear-gradient(180deg, #ffffff, #f8fafc)',
   border: '1px solid #e2e8f0',
-  borderRadius: 10,
-  padding: '8px 10px',
-  background: '#f8fafc',
+  borderRadius: 24,
+  padding: 20,
+  boxShadow: '0 16px 40px rgba(15,23,42,0.06)',
 };
 
-const miniLabel = {
+const sectionHeader = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  gap: 12,
+  alignItems: 'center',
+  marginBottom: 16,
+};
+
+const sectionEyebrow = {
   fontSize: 11,
+  fontWeight: 700,
   color: '#64748b',
+  textTransform: 'uppercase',
+  letterSpacing: '0.08em',
+  marginBottom: 6,
+};
+
+const sectionTitle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  color: '#0f172a',
+  fontSize: 20,
+  fontWeight: 700,
+  letterSpacing: '-0.03em',
+};
+
+const legendItem = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+};
+
+const legendDot = {
+  width: 10,
+  height: 10,
+  borderRadius: 999,
+  display: 'inline-block',
+};
+
+const emptyState = {
+  padding: '18px 0',
+  color: '#64748b',
+  fontSize: 13,
+};
+
+const schoolMiniLabel = {
+  color: '#64748b',
+  fontSize: 11,
   marginBottom: 4,
 };
 
-const miniVal = {
-  fontSize: 16,
-  fontWeight: 700,
+const schoolMiniVal = {
   color: '#0f172a',
+  fontSize: 18,
+  fontWeight: 700,
+};
+
+const intelStat = {
+  padding: 14,
+  borderRadius: 16,
+  background: '#f8fafc',
+  border: '1px solid #e2e8f0',
+};
+
+const intelVal = {
+  color: '#0f172a',
+  fontSize: 22,
+  fontWeight: 700,
+};
+
+const pillStyle = {
+  display: 'inline-flex',
+  padding: '4px 9px',
+  borderRadius: 999,
+  fontSize: 11,
+  fontWeight: 700,
+  textTransform: 'capitalize',
 };

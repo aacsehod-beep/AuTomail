@@ -92,7 +92,7 @@ export default function LogsPage({ schoolView }) {
   const hasFailed  = rows.some(r => r.status === 'FAILED');
 
   return (
-    <div style={{ maxWidth: 1100 }}>
+    <div style={{ width: '100%', maxWidth: 1280 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><ClipboardList size={20} /> Email Logs</h1>
