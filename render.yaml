@@ -19,3 +19,5 @@ services:
         sync: false
       - key: APP_PASS
         sync: false
+      - key: GAS_MAIL_URL
+        value: https://script.google.com/macros/s/AKfycbxdHKEV-bA1Db1PiUrEH--SL0UOw_13ZfKy0w3a_G2IF86Bt51Z3f90N7JN7MgKWn8J/exec
