@@ -42,16 +42,34 @@ function doGet() {
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
-    const { to, toName, subject, html, text } = data;
+    const { to, toName, subject, html, text, attachments } = data;
 
     if (!to || !subject) {
       return jsonResponse_({ success: false, error: 'Missing required fields: to, subject' });
     }
 
-    GmailApp.sendEmail(to, subject, text || subject, {
+    // Reconstruct attachment blobs from base64
+    const blobs = [];
+    if (Array.isArray(attachments)) {
+      attachments.forEach(function(att) {
+        if (att && att.content && att.filename) {
+          const blob = Utilities.newBlob(
+            Utilities.base64Decode(att.content),
+            att.type || 'application/pdf',
+            att.filename
+          );
+          blobs.push(blob);
+        }
+      });
+    }
+
+    const opts = {
       name: CONFIG.DEFAULT_SENDER_NAME,
       htmlBody: html || text || subject,
-    });
+    };
+    if (blobs.length > 0) opts.attachments = blobs;
+
+    GmailApp.sendEmail(to, subject, text || subject, opts);
 
     return jsonResponse_({ success: true });
   } catch (err) {

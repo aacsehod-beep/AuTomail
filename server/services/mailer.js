@@ -6,13 +6,13 @@ const FROM_NAME = process.env.SENDER_NAME || 'Aurora University';
  * Send a single email via Google Apps Script relay.
  * GAS runs on Google servers — no SMTP, no IPv6 issues.
  */
-async function sendOne({ to, toName, subject, html, text }) {
+async function sendOne({ to, toName, subject, html, text, attachments = [] }) {
   const gasUrl = process.env.GAS_MAIL_URL;
   if (!gasUrl) {
     throw new Error('GAS_MAIL_URL is not set. Deploy the GAS web app and add its URL to Render environment variables.');
   }
 
-  const body = JSON.stringify({ to, toName, subject, html, text: text || subject });
+  const body = JSON.stringify({ to, toName, subject, html, text: text || subject, attachments });
 
   return new Promise((resolve, reject) => {
     const url = new URL(gasUrl);
