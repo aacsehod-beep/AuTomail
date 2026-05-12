@@ -1,8 +1,23 @@
 const https = require('https');
 const http  = require('http');
 const nodemailer = require('nodemailer');
+const dnsPromises = require('dns').promises;
 
 const FROM_NAME = process.env.SENDER_NAME || 'Aurora University';
+
+// Cache the resolved IPv4 address so we only DNS-lookup once per process lifetime
+let _gmailIPv4 = null;
+async function getGmailIPv4() {
+  if (_gmailIPv4) return _gmailIPv4;
+  try {
+    const addrs = await dnsPromises.resolve4('smtp.gmail.com');
+    _gmailIPv4 = addrs[0];
+    console.log('[mailer] Resolved smtp.gmail.com IPv4 =>', _gmailIPv4);
+  } catch {
+    _gmailIPv4 = 'smtp.gmail.com'; // fallback
+  }
+  return _gmailIPv4;
+}
 
 /**
  * POST JSON to a GAS /exec URL.
@@ -83,11 +98,14 @@ function postToGas(urlStr, body) {
  * Send via Gmail SMTP using per-user App Password credentials.
  */
 async function sendViaSmtp({ to, toName, subject, html, text, attachments = [], senderEmail, smtpAppPass }) {
+  // Explicitly resolve to IPv4 address — nodemailer's tls.connect() ignores family/setDefaultResultOrder
+  const smtpHost = await getGmailIPv4();
+
   const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
+    host: smtpHost,
     port: 465,
     secure: true,
-    family: 4,           // force IPv4 — Render free tier has no IPv6 outbound
+    tls: { servername: 'smtp.gmail.com' },   // keep TLS cert validation for smtp.gmail.com
     auth: { user: senderEmail, pass: smtpAppPass },
   });
 
