@@ -38,6 +38,7 @@ export default function BulkMailPage() {
   const [recipients,   setRecipients]   = useState([]);
   const [checkedEmails,setCheckedEmails]= useState(new Set());
   const [showRecipients, setShowRecipients] = useState(false);
+  const [enableMultilingual, setEnableMultilingual] = useState(false);
   const [mailType,     setMailType]     = useState('circular');
   const [subject,      setSubject]      = useState('');
   const [body,         setBody]         = useState('');
