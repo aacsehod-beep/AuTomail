@@ -1,4 +1,7 @@
 require('dotenv').config();
+// Force IPv4 DNS resolution globally — Render free tier has no outbound IPv6
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
 const express    = require('express');
 const fileUpload = require('express-fileupload');
 const cors       = require('cors');
