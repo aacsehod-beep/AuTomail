@@ -2,7 +2,7 @@ services:
   - type: web
     name: aurora-bulk-mailer
     runtime: node
-    buildCommand: npm install --omit=dev
+    buildCommand: npm install && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
