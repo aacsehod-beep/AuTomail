@@ -1,45 +1,25 @@
-const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
 
-// Lazy-initialise transport so missing env vars don't crash on startup
-// pool:true reuses SMTP connections instead of opening a new TLS handshake per email
-let _transport = null;
-function getTransport() {
-  if (!_transport) {
-    _transport = nodemailer.createTransport({
-      pool: true,          // reuse connections — major speed improvement for bulk send
-      maxConnections: 3,   // up to 3 parallel Gmail SMTP connections
-      maxMessages: 100,    // messages per connection before recycling
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true, // SSL
-      family: 4,   // force IPv4 — Render free tier has no outbound IPv6
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASS,
-      },
-      connectionTimeout: 15000,  // 15s — fail fast if SMTP unreachable
-      greetingTimeout: 10000,
-      socketTimeout: 30000,
-      tls: {
-        rejectUnauthorized: false,
-      },
-    });
-  }
-  return _transport;
+const FROM_EMAIL = process.env.SENDER_EMAIL || 'no-reply@aurora.edu';
+const FROM_NAME  = process.env.SENDER_NAME  || 'Aurora University';
+
+// Initialise SendGrid with API key
+if (process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
 
-const FROM_EMAIL = process.env.SENDER_EMAIL || process.env.GMAIL_USER || 'no-reply@aurora.edu';
-const FROM_NAME  = process.env.SENDER_NAME  || 'Aurora University';
-const FROM       = `"${FROM_NAME}" <${FROM_EMAIL}>`;
-
 /**
- * Send a single email.
+ * Send a single email via SendGrid.
  * Returns { success: true } or throws.
  */
 async function sendOne({ to, toName, subject, html, text, attachments = [], replyTo }) {
+  if (!process.env.SENDGRID_API_KEY) {
+    throw new Error('SENDGRID_API_KEY is not set. Please add it in Render environment variables.');
+  }
+
   const msg = {
-    from:    FROM,
-    to:      toName ? `"${toName}" <${to}>` : to,
+    from:    { name: FROM_NAME, email: FROM_EMAIL },
+    to:      toName ? { name: toName, email: to } : to,
     subject,
     html,
     text:    text || subject,
@@ -49,13 +29,14 @@ async function sendOne({ to, toName, subject, html, text, attachments = [], repl
 
   if (attachments.length) {
     msg.attachments = attachments.map(att => ({
-      content:     Buffer.from(att.content, 'base64'),
+      content:     att.content,           // already base64
       filename:    att.filename,
-      contentType: att.type || 'application/octet-stream',
+      type:        att.type || 'application/octet-stream',
+      disposition: 'attachment',
     }));
   }
 
-  await getTransport().sendMail(msg);
+  await sgMail.send(msg);
   return { success: true };
 }
 
