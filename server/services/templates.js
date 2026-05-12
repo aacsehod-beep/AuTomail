@@ -122,12 +122,16 @@ function renderAttendanceHtml({ ctx, subjects, threshold }) {
 function renderCircularHtml({ subject, body, ctx, circularNo, category }) {
   const filledBody = fillTemplate(body, ctx);
 
-  const inner = `
-    <p style="margin:0 0 20px 0;font-size:15px;font-weight:600;color:#1a237e">${escapeHtml(subject)}</p>
-    <div style="font-size:14px;line-height:1.8;color:#333333">${filledBody}</div>
-  `;
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;font-family:Arial,sans-serif;font-size:14px;color:#000000;line-height:1.6">
+  <div style="max-width:700px;padding:16px">
+    ${filledBody}
+  </div>
+</body></html>`;
 
-  return { html: wrapEmail(inner), text: stripHtml(filledBody) };
+  return { html, text: stripHtml(filledBody) };
 }
 
 // ─── Custom HTML passthrough ───────────────────────────────────────────────────
