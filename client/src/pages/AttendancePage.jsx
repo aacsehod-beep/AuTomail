@@ -7,7 +7,7 @@ import ProgressPanel  from '../components/ProgressPanel';
 import { showToast }  from '../components/Toast';
 import ConfirmSendModal from '../components/ConfirmSendModal';
 
-const DEFAULT_MAPPING = { startRow: 9, nameCol: 2, emailCol: 4, weekInfoRow: 7, subjectHdrRow: 8 };
+const DEFAULT_MAPPING = { startRow: 9, nameCol: 2, regNoCol: 3, emailCol: 4, weekInfoRow: 7, subjectHdrRow: 8 };
 // Default subject layout: columns for name, classes-held, classes-attended, percentage
 // Each entry: { nameCol, heldCol, attendedCol, pctCol }
 const DEFAULT_SUBJ_LAYOUT = [
@@ -136,10 +136,11 @@ export default function AttendancePage() {
           <hr className="divider" />
           {/* Basic mapping */}
           {/* Row 1 — student location columns */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 }}>
             {[
               { label: 'Data Start Row',   key: 'startRow',     hint: 'Row where student data begins' },
               { label: 'Name Column #',    key: 'nameCol',      hint: 'Column containing student name' },
+              { label: 'Reg No Column #',  key: 'regNoCol',     hint: 'Column containing registration number' },
               { label: 'Email Column #',   key: 'emailCol',     hint: 'Column containing email address' },
             ].map(f => (
               <div className="form-group" key={f.key}>

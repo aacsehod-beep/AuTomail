@@ -42,11 +42,13 @@ function listSections(buffer, originalFilename) {
  */
 function loadRecipients(buffer, sections, mapping = {}, originalFilename) {
   const { wb, map } = readWorkbook(buffer, originalFilename);
-  const startRow = Number(mapping.startRow || DEFAULT_START_ROW);
-  const nameCol  = Number(mapping.nameCol  || DEFAULT_NAME_COL);
-  const emailCol = Number(mapping.emailCol || DEFAULT_EMAIL_COL);
-  const idxName  = nameCol  - 1;
-  const idxEmail = emailCol - 1;
+  const startRow  = Number(mapping.startRow  || DEFAULT_START_ROW);
+  const nameCol   = Number(mapping.nameCol   || DEFAULT_NAME_COL);
+  const emailCol  = Number(mapping.emailCol  || DEFAULT_EMAIL_COL);
+  const regNoCol  = Number(mapping.regNoCol  || 3);
+  const idxName   = nameCol  - 1;
+  const idxEmail  = emailCol - 1;
+  const idxRegNo  = regNoCol - 1;
 
   const results = [];
 
@@ -61,7 +63,7 @@ function loadRecipients(buffer, sections, mapping = {}, originalFilename) {
       const row   = grid[r];
       const email = String(row[idxEmail] || '').trim().toLowerCase();
       const name  = String(row[idxName]  || '').trim();
-      const regNo = String(row[2]        || '').trim();
+      const regNo = String(row[idxRegNo] || '').trim();
       if (email && isValidEmail(email)) {
         results.push({ name, email, regNo, section: displaySec });
       }
@@ -86,10 +88,12 @@ function loadAttendanceData(buffer, displaySection, mapping = {}, originalFilena
   const startRow        = Number(mapping.startRow        || DEFAULT_START_ROW);
   const nameCol         = Number(mapping.nameCol         || DEFAULT_NAME_COL);
   const emailCol        = Number(mapping.emailCol        || DEFAULT_EMAIL_COL);
+  const regNoCol        = Number(mapping.regNoCol        || 3);
   const weekInfoRow     = Number(mapping.weekInfoRow     || 7);   // row that contains the period/week label
   const subjectHdrRow   = Number(mapping.subjectHdrRow   || 8);   // row that contains subject names
   const idxName   = nameCol  - 1;
   const idxEmail  = emailCol - 1;
+  const idxRegNo  = regNoCol - 1;
 
   // Week / period info — first non-empty cell in the configured row
   const weekRow  = grid[weekInfoRow - 1] || [];
@@ -125,8 +129,8 @@ function loadAttendanceData(buffer, displaySection, mapping = {}, originalFilena
     const email    = rawEmail.toLowerCase();
     if (!email) continue;
 
-    const name  = String(row[idxName] || '').trim();
-    const regNo = String(row[2]       || '').trim();
+    const name  = String(row[idxName]  || '').trim();
+    const regNo = String(row[idxRegNo] || '').trim();
 
     if (!isValidEmail(email)) {
       // Store with a parse error so the mailer can report it properly
