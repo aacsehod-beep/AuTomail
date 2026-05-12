@@ -19,7 +19,7 @@ const MAIL_TYPES = [
   { id: 'certificate',  label: '🎓 Certificate Mail', color: '#0f766e' },
 ];
 
-const DEFAULT_MAPPING = { startRow: 9, nameCol: 2, emailCol: 4 };
+const DEFAULT_MAPPING = { startRow: 9, nameCol: 2, regNoCol: 3, emailCol: 4 };
 
 // Default fee sheet column mapping
 const DEFAULT_FEE_MAPPING = {
@@ -600,7 +600,7 @@ export default function BulkMailPage() {
             <hr className="divider" />
             <SectionSelector sections={sections} selected={selected} onChange={setSelected} />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, margin: '14px 0' }}>
-              {[['Start Row', 'startRow'], ['Name Col #', 'nameCol'], ['Email Col #', 'emailCol']].map(([lbl, key]) => (
+              {[['Start Row', 'startRow'], ['Name Col #', 'nameCol'], ['Reg No Col #', 'regNoCol'], ['Email Col #', 'emailCol']].map(([lbl, key]) => (
                 <div className="form-group" key={key}>
                   <label className="form-label">{lbl}</label>
                   <input className="form-control" type="number" min={1} value={mapping[key]}

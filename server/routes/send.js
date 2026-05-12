@@ -246,8 +246,14 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
 
     if (payload.dynamicAttachmentMode === 'mapped') {
       const keyField = payload.dynamicAttachmentField || 'RegNo';
-      const key = String(dynEntry?.[keyField] || rec?.[keyField] || rec?.regNo || rec?.email || '').trim().toLowerCase();
+      // rec uses camelCase (regNo, name, email) but keyField comes as PascalCase from UI
+      const recFieldMap = { 'RegNo': rec?.regNo, 'Name': rec?.name, 'Email': rec?.email };
+      const recValue = recFieldMap[keyField] !== undefined ? recFieldMap[keyField] : rec?.[keyField];
+      const key = String(dynEntry?.[keyField] || recValue || rec?.regNo || rec?.email || '').trim().toLowerCase();
       const att = mappedAttachmentsMap[key];
+      if (!att) {
+        console.warn(`[dynamicAttach] No PDF matched for key="${key}" (field=${keyField}, email=${rec?.email}). Available keys: ${Object.keys(mappedAttachmentsMap).join(', ')}`);
+      }
       return att ? [att] : [];
     }
 
