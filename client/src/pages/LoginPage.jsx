@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GraduationCap, Eye, EyeOff, LogIn, Loader2 } from 'lucide-react';
+import { GraduationCap, Eye, EyeOff, LogIn, Loader2, Mail, ShieldCheck, Sparkles, Clock3 } from 'lucide-react';
 
 export default function LoginPage({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -47,8 +47,28 @@ export default function LoginPage({ onLogin }) {
           </div>
 
           <div className="login-hero-copy">
-            <h1>Aurora University</h1>
-            <p>Mail Operations Console</p>
+            <span className="login-pill">Staff portal</span>
+            <h1>Staff Mail Console</h1>
+            <p>Send attendance and circular emails for Aurora University.</p>
+          </div>
+
+          <div className="login-feature-list">
+            <div className="login-feature-item">
+              <Mail size={16} />
+              <span>Bulk and attendance email delivery</span>
+            </div>
+            <div className="login-feature-item">
+              <ShieldCheck size={16} />
+              <span>Protected staff access and audit logs</span>
+            </div>
+            <div className="login-feature-item">
+              <Sparkles size={16} />
+              <span>AI-assisted subject and body drafting</span>
+            </div>
+            <div className="login-feature-item">
+              <Clock3 size={16} />
+              <span>Scheduled sends and live progress tracking</span>
+            </div>
           </div>
 
           <div className="login-hero-footer">© {new Date().getFullYear()} Aurora University</div>
