@@ -110,7 +110,7 @@ router.post('/', async (req, res) => {
     res.json({ jobId });
 
     // Run send job in background (intentionally not awaited)
-    runJob(jobId, type, payloadWithMeta, recipients, buffer, originalFilename, attachments, certMap, certMatchKey, req.school || '', null, mappedAttachmentsMap).catch(err => {
+    runJob(jobId, type, payloadWithMeta, recipients, buffer, originalFilename, attachments, certMap, certMatchKey, req.school || '', null, mappedAttachmentsMap, req.gasUrl || '').catch(err => {
       jobManager.updateJob(jobId, { status: 'Error: ' + err.message, finished: true });
     });
 
@@ -178,7 +178,7 @@ router.post('/columns', (req, res) => {
 });
 
 // ─── Job Runner ───────────────────────────────────────────────────────────────
-async function runJob(jobId, type, payload, recipients, buffer, originalFilename = '', attachments = [], certMap = {}, certMatchKey = 'regNo', school = '', resumeState = null, mappedAttachmentsMap = {}) {
+async function runJob(jobId, type, payload, recipients, buffer, originalFilename = '', attachments = [], certMap = {}, certMatchKey = 'regNo', school = '', resumeState = null, mappedAttachmentsMap = {}, gasUrl = '') {
   const sender  = process.env.SENDER_EMAIL || 'no-reply@aurora.edu';
   const logRows = [];
   let sent = resumeState?.sent || 0;
@@ -376,7 +376,7 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
     }
   };
 
-  for await (const result of mailer.sendBatch(recipients, buildMessage, { batchSize: BATCH_SIZE, delayMs: DELAY_MS })) {
+  for await (const result of mailer.sendBatch(recipients, buildMessage, { batchSize: BATCH_SIZE, delayMs: DELAY_MS }, gasUrl)) {
     if (jobManager.isCancelled(jobId)) break;
 
     const rec = recipients[done];

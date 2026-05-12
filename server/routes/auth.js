@@ -34,6 +34,7 @@ router.post('/login', async (req, res) => {
       user:      row.username,
       school:    row.school_name,
       role:      row.role,
+      gasUrl:    row.gas_url || '',
       createdAt: Date.now(),
     });
 
@@ -67,7 +68,7 @@ function requireSuperadmin(req, res, next) {
 // GET /api/auth/users
 router.get('/users', requireSuperadmin, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, username, school_name, role FROM users ORDER BY id`).all();
+    const rows = db.prepare(`SELECT id, username, school_name, role, gas_url FROM users ORDER BY id`).all();
     res.json({ users: rows });
   } catch (err) {
     console.error('[Auth] GET /users error:', err);
@@ -126,6 +127,23 @@ router.delete('/users/:id', requireSuperadmin, (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('[Auth] DELETE /users error:', err);
+    res.status(500).json({ error: 'An internal error occurred.' });
+  }
+});
+
+// PUT /api/auth/users/:id/gas — update GAS relay URL for this user (superadmin only)
+router.put('/users/:id/gas', requireSuperadmin, (req, res) => {
+  const id = Number(req.params.id);
+  const { gas_url } = req.body || {};
+  if (!id) return res.status(400).json({ error: 'Invalid user id.' });
+  if (!gas_url || !gas_url.startsWith('https://script.google.com/')) {
+    return res.status(400).json({ error: 'Must be a valid Google Apps Script URL.' });
+  }
+  try {
+    db.prepare(`UPDATE users SET gas_url = ? WHERE id = ?`).run([gas_url.trim(), id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[Auth] PUT /users/gas error:', err);
     res.status(500).json({ error: 'An internal error occurred.' });
   }
 });

@@ -9,5 +9,6 @@ module.exports = function requireAuth(req, res, next) {
   req.user   = entry.user;
   req.school = entry.school;
   req.role   = entry.role;
+  req.gasUrl = entry.gasUrl || '';
   next();
 };

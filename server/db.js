@@ -64,11 +64,13 @@ mainDb.run(`CREATE TABLE IF NOT EXISTS users (
   school_name   TEXT NOT NULL,
   role          TEXT NOT NULL DEFAULT 'admin',
   sender_email  TEXT NOT NULL DEFAULT '',
-  smtp_app_pass TEXT NOT NULL DEFAULT ''
+  smtp_app_pass TEXT NOT NULL DEFAULT '',
+  gas_url       TEXT NOT NULL DEFAULT ''
 )`);
 // Migrate existing tables that lack the new columns
 try { mainDb.run(`ALTER TABLE users ADD COLUMN sender_email TEXT NOT NULL DEFAULT ''`); } catch (_) {}
 try { mainDb.run(`ALTER TABLE users ADD COLUMN smtp_app_pass TEXT NOT NULL DEFAULT ''`); } catch (_) {}
+try { mainDb.run(`ALTER TABLE users ADD COLUMN gas_url TEXT NOT NULL DEFAULT ''`); } catch (_) {}
 
 try {
   mainDb.run(`CREATE TABLE IF NOT EXISTS settings (

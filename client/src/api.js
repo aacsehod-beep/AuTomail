@@ -50,6 +50,7 @@ export const api = {
   createUser:    (u)              => req('POST', '/auth/users', u),
   deleteUser:    (id)             => req('DELETE', `/auth/users/${id}`),
   resetPassword: (id, password)   => req('PUT', `/auth/users/${id}/password`, { password }),
+  updateGasUrl:  (id, gas_url)    => req('PUT', `/auth/users/${id}/gas`, { gas_url }),
   getSchools:    ()               => req('GET',  '/auth/schools'),
   getSettings:   ()               => req('GET',  '/settings'),
   updateSettings:(key, value)     => req('PUT',  '/settings', { key, value }),

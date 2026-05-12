@@ -80,26 +80,27 @@ function postToGas(urlStr, body) {
 
 /**
  * Send a single email via Google Apps Script relay.
+ * Uses per-user gasUrl if provided, falls back to GAS_MAIL_URL env var.
  */
-async function sendOne({ to, toName, subject, html, text, attachments = [] }) {
-  const gasUrl = process.env.GAS_MAIL_URL;
-  if (!gasUrl) {
-    throw new Error('GAS_MAIL_URL is not set. Deploy the GAS web app and add its URL to Render environment variables.');
+async function sendOne({ to, toName, subject, html, text, attachments = [], gasUrl }) {
+  const url = gasUrl || process.env.GAS_MAIL_URL;
+  if (!url) {
+    throw new Error('No GAS relay URL configured. Set a GAS URL for this user in Manage Users, or set GAS_MAIL_URL in environment variables.');
   }
   const body = JSON.stringify({ to, toName, subject, html, text: text || subject, attachments });
-  return postToGas(gasUrl, body);
+  return postToGas(url, body);
 }
 
 /**
  * Send to multiple recipients individually (personalised).
  * Yields { email, success, error } for each.
  */
-async function* sendBatch(recipients, buildMessage, { batchSize = 10, delayMs = 150 } = {}) {
+async function* sendBatch(recipients, buildMessage, { batchSize = 10, delayMs = 150 } = {}, gasUrl = '') {
   for (let i = 0; i < recipients.length; i++) {
     const rec = recipients[i];
     try {
       const msg = await buildMessage(rec);
-      await sendOne(msg);
+      await sendOne({ ...msg, gasUrl });
       yield { email: rec.email, success: true };
     } catch (err) {
       const errMsg = err.message || 'Unknown error';
