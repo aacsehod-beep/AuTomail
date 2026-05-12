@@ -1,10 +1,14 @@
 const nodemailer = require('nodemailer');
 
 // Lazy-initialise transport so missing env vars don't crash on startup
+// pool:true reuses SMTP connections instead of opening a new TLS handshake per email
 let _transport = null;
 function getTransport() {
   if (!_transport) {
     _transport = nodemailer.createTransport({
+      pool: true,          // reuse connections — major speed improvement for bulk send
+      maxConnections: 3,   // up to 3 parallel Gmail SMTP connections
+      maxMessages: 100,    // messages per connection before recycling
       host: 'smtp.gmail.com',
       port: 465,
       secure: true, // SSL
@@ -13,7 +17,6 @@ function getTransport() {
         pass: process.env.GMAIL_APP_PASS,
       },
       tls: {
-        // Allows sending through networks with a corporate/proxy certificate chain
         rejectUnauthorized: false,
       },
     });
@@ -56,7 +59,7 @@ async function sendOne({ to, toName, subject, html, text, attachments = [], repl
  * Send to multiple recipients individually (personalised).
  * Yields { email, success, error } for each.
  */
-async function* sendBatch(recipients, buildMessage, { batchSize = 5, delayMs = 300 } = {}) {
+async function* sendBatch(recipients, buildMessage, { batchSize = 10, delayMs = 150 } = {}) {
   for (let i = 0; i < recipients.length; i++) {
     const rec = recipients[i];
     try {
@@ -68,7 +71,7 @@ async function* sendBatch(recipients, buildMessage, { batchSize = 5, delayMs = 3
       yield { email: rec.email, success: false, error: errMsg };
     }
 
-    // Batch pause
+    // Batch pause (shorter since pool reuses connections)
     if ((i + 1) % batchSize === 0 && i + 1 < recipients.length) {
       await sleep(delayMs);
     }
