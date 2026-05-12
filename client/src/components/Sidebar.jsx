@@ -1,4 +1,4 @@
-import { BarChart2, Send, TrendingUp, ClipboardList, FileText, Clock, GraduationCap, LogOut, User, ChevronLeft, ChevronRight, Sun, Moon, Users, Globe } from 'lucide-react';
+import { BarChart2, Send, TrendingUp, ClipboardList, FileText, Clock, GraduationCap, LogOut, User, ChevronLeft, ChevronRight, Sun, Moon, Users, Globe, Settings } from 'lucide-react';
 
 export default function Sidebar({ current, onNavigate, user, school, role, schoolView, schools, onSchoolViewChange, onLogout, collapsed, onToggleCollapse, darkMode, onToggleDark }) {
   const NAV = [
@@ -8,7 +8,10 @@ export default function Sidebar({ current, onNavigate, user, school, role, schoo
     { id: 'logs',       Icon: ClipboardList, label: 'Email Logs',       desc: 'Full send history'          },
     { id: 'templates',  Icon: FileText,      label: 'Templates',        desc: 'Save reusable templates'    },
     { id: 'scheduler',  Icon: Clock,         label: 'Scheduler',        desc: 'Schedule future sends'      },
-    ...(role === 'superadmin' ? [{ id: 'users', Icon: Users, label: 'Manage Users', desc: 'Add / remove school admins' }] : []),
+    ...(role === 'superadmin' ? [
+      { id: 'users',    Icon: Users,    label: 'Manage Users',  desc: 'Add / remove school admins' },
+      { id: 'settings', Icon: Settings, label: 'Settings',      desc: 'Languages & system config'  },
+    ] : []),
   ];
 
   return (

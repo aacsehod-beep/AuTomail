@@ -13,6 +13,16 @@ const lockDir = path.join(DB_DIR, 'aurora.db.lock');
 if (fs.existsSync(lockDir)) {
   try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch (_) {}
 }
+// Clean up stale school DB locks
+try {
+  if (fs.existsSync(SCHOOLS_DIR)) {
+    fs.readdirSync(SCHOOLS_DIR)
+      .filter(f => f.endsWith('.db.lock'))
+      .forEach(f => {
+        try { fs.rmSync(path.join(SCHOOLS_DIR, f), { recursive: true, force: true }); } catch (_) {}
+      });
+  }
+} catch (_) {}
 
 // ── Shim: add transaction() helper to any db instance ────────────────────────
 function addShim(db) {
@@ -54,6 +64,15 @@ mainDb.run(`CREATE TABLE IF NOT EXISTS users (
   school_name   TEXT NOT NULL,
   role          TEXT NOT NULL DEFAULT 'admin'
 )`);
+
+try {
+  mainDb.run(`CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )`);
+  // Seed default languages config
+  mainDb.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('languages', '[{"code":"hi","label":"Hindi"},{"code":"ta","label":"Tamil"}]')`);
+} catch (_) {}
 
 // Seed default superadmin from env vars (INSERT OR IGNORE — never overwrites existing)
 try {
@@ -119,9 +138,14 @@ function initSchoolDb(db, schoolName) {
     type        TEXT NOT NULL,
     subject     TEXT NOT NULL,
     body        TEXT NOT NULL,
+    subject_i18n TEXT DEFAULT '{}',
+    body_i18n    TEXT DEFAULT '{}',
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
   )`);
+  // Backward-compatible migrations for existing school DBs
+  try { db.run(`ALTER TABLE templates ADD COLUMN subject_i18n TEXT DEFAULT '{}'`); } catch (_) {}
+  try { db.run(`ALTER TABLE templates ADD COLUMN body_i18n TEXT DEFAULT '{}'`); } catch (_) {}
 
   db.run(`CREATE TABLE IF NOT EXISTS scheduled_jobs (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,7 +176,7 @@ function getSchoolDb(schoolName) {
   }
 
   const db = new Database(path.join(SCHOOLS_DIR, `${slug}.db`));
-  initSchoolDb(db, schoolName);
+  try { initSchoolDb(db, schoolName); } catch (e) { console.error(`[DB] initSchoolDb failed for ${slug}:`, e.message); }
   schoolDbCache.set(slug, db);
   return db;
 }
@@ -166,14 +190,28 @@ function getAllSchoolDbs() {
   const files = fs.readdirSync(SCHOOLS_DIR).filter(
     f => f.endsWith('.db') && !f.endsWith('-journal') && !f.endsWith('-wal') && !f.endsWith('-shm')
   );
-  return files.map(f => {
+  const results = [];
+  for (const f of files) {
     const slug = f.replace(/\.db$/, '');
-    if (schoolDbCache.has(slug)) return { slug, db: schoolDbCache.get(slug) };
-    const db = new Database(path.join(SCHOOLS_DIR, f));
-    initSchoolDb(db, null);
-    schoolDbCache.set(slug, db);
-    return { slug, db };
-  });
+    if (schoolDbCache.has(slug)) {
+      results.push({ slug, db: schoolDbCache.get(slug) });
+      continue;
+    }
+    // Clean stale lock left by a crashed/restarted process
+    const lockPath = path.join(SCHOOLS_DIR, `${slug}.db.lock`);
+    if (fs.existsSync(lockPath)) {
+      try { fs.rmSync(lockPath, { recursive: true, force: true }); } catch (_) {}
+    }
+    try {
+      const db = new Database(path.join(SCHOOLS_DIR, f));
+      try { initSchoolDb(db, null); } catch (e) { console.error(`[DB] initSchoolDb failed for ${slug}:`, e.message); }
+      schoolDbCache.set(slug, db);
+      results.push({ slug, db });
+    } catch (e) {
+      console.error(`[DB] Could not open school DB ${f}:`, e.message);
+    }
+  }
+  return results;
 }
 
 // Default export = mainDb so existing requires of db.js (auth, jobManager) keep working

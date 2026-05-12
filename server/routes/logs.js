@@ -13,6 +13,15 @@ function resolveDb(req) {
   return getSchoolDb(req.school);
 }
 
+function resolveSchoolName(db, fallback = '') {
+  try {
+    const row = db.prepare(`SELECT value FROM school_meta WHERE key='school_name'`).get();
+    return row?.value || fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
 // GET /api/logs?type=&status=&section=&jobId=&dateFrom=&dateTo=&limit=&offset=
 router.get('/', (req, res) => {
   try {
@@ -72,6 +81,58 @@ router.get('/export', (req, res) => {
     res.send(csv);
   } catch (err) {
     console.error('[GET /api/logs/export] error:', err);
+    res.status(500).json({ error: 'An internal error occurred.' });
+  }
+});
+
+// GET /api/logs/recipient-history?q=<email|name|regno>&limit=&schoolFilter=
+router.get('/recipient-history', (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const limit = Math.min(Math.max(Number(req.query.limit || 200), 1), 2000);
+    if (q.length < 2) {
+      return res.status(400).json({ error: 'Please provide at least 2 characters to search.' });
+    }
+
+    const searchSql = `
+      SELECT id, job_id, sent_at, type, recipient, name, reg_no, section, status, message, sender
+      FROM email_logs
+      WHERE lower(recipient) = lower(?)
+         OR lower(name) LIKE lower(?)
+         OR lower(reg_no) = lower(?)
+      ORDER BY sent_at DESC
+      LIMIT ?
+    `;
+
+    let rows = [];
+    const exactEmail = q;
+    const nameLike = `%${q}%`;
+    const exactReg = q;
+
+    if (req.role === 'superadmin' && !req.query.schoolFilter) {
+      for (const { slug, db: sDb } of getAllSchoolDbs()) {
+        const schoolName = resolveSchoolName(sDb, slug);
+        const schoolRows = sDb.prepare(searchSql).all([exactEmail, nameLike, exactReg, limit]);
+        rows.push(...schoolRows.map(r => ({ ...r, school: schoolName })));
+      }
+      rows.sort((a, b) => (b.sent_at || '').localeCompare(a.sent_at || ''));
+      rows = rows.slice(0, limit);
+    } else {
+      const db = resolveDb(req);
+      const schoolName = req.role === 'superadmin' ? (req.query.schoolFilter || '') : (req.school || '');
+      rows = db.prepare(searchSql).all([exactEmail, nameLike, exactReg, limit]).map(r => ({ ...r, school: schoolName }));
+    }
+
+    const summary = {
+      total: rows.length,
+      sent: rows.filter(r => r.status === 'SENT').length,
+      failed: rows.filter(r => r.status === 'FAILED').length,
+      lastSentAt: rows[0]?.sent_at || null,
+    };
+
+    res.json({ query: q, summary, rows });
+  } catch (err) {
+    console.error('[GET /api/logs/recipient-history] error:', err);
     res.status(500).json({ error: 'An internal error occurred.' });
   }
 });

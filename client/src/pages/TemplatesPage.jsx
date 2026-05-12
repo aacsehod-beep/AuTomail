@@ -4,8 +4,9 @@ import { api } from '../api';
 
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState([]);
-  const [editing,   setEditing]   = useState(null); // null | 'new' | template object
-  const [form,      setForm]      = useState({ name: '', type: 'general', subject: '', body: '' });
+  const [editing,   setEditing]   = useState(null);
+  const [supportedLangs, setSupportedLangs] = useState([{ code: 'hi', label: 'Hindi' }, { code: 'ta', label: 'Tamil' }]);
+  const [form,      setForm]      = useState({ name: '', type: 'general', subject: '', body: '', subjectI18n: {}, bodyI18n: {} });
   const [error,     setError]     = useState('');
   const [saved,     setSaved]     = useState(false);
 
@@ -13,15 +14,28 @@ export default function TemplatesPage() {
     try { setTemplates(await api.getTemplates()); } catch (e) { setError(e.message); }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    api.getSettings().then(s => {
+      if (Array.isArray(s.languages) && s.languages.length) setSupportedLangs(s.languages);
+    }).catch(() => {});
+  }, []);
 
   function startNew() {
-    setForm({ name: '', type: 'general', subject: '', body: '' });
+    const emptyI18n = {}; supportedLangs.forEach(l => { emptyI18n[l.code] = ''; });
+    setForm({ name: '', type: 'general', subject: '', body: '', subjectI18n: { ...emptyI18n }, bodyI18n: { ...emptyI18n } });
     setEditing('new'); setSaved(false); setError('');
   }
 
   function startEdit(t) {
-    setForm({ name: t.name, type: t.type, subject: t.subject, body: t.body });
+    let subjectI18n = {}; let bodyI18n = {};
+    supportedLangs.forEach(l => { subjectI18n[l.code] = ''; bodyI18n[l.code] = ''; });
+    try {
+      const si = t.subject_i18n ? JSON.parse(t.subject_i18n) : {};
+      const bi = t.body_i18n ? JSON.parse(t.body_i18n) : {};
+      supportedLangs.forEach(l => { subjectI18n[l.code] = si[l.code] || ''; bodyI18n[l.code] = bi[l.code] || ''; });
+    } catch (_) {}
+    setForm({ name: t.name, type: t.type, subject: t.subject, body: t.body, subjectI18n, bodyI18n });
     setEditing(t); setSaved(false); setError('');
   }
 
@@ -83,6 +97,22 @@ export default function TemplatesPage() {
               onChange={e => setForm(f => ({ ...f, body: e.target.value }))}
               placeholder="Dear {{Name}},&#10;&#10;..." />
           </div>
+
+          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 12, marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#0f766e', marginBottom: 8 }}>Multilingual Variants (optional)</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+              {supportedLangs.map(lang => (
+                <div key={lang.code}>
+                  <label className="form-label" style={{ fontSize: 12 }}>{lang.label} Subject ({lang.code})</label>
+                  <input className="form-control" value={form.subjectI18n[lang.code] || ''}
+                    onChange={e => setForm(f => ({ ...f, subjectI18n: { ...f.subjectI18n, [lang.code]: e.target.value } }))} />
+                  <label className="form-label" style={{ marginTop: 8, fontSize: 12 }}>{lang.label} Body ({lang.code})</label>
+                  <textarea className="form-control" style={{ minHeight: 90 }} value={form.bodyI18n[lang.code] || ''}
+                    onChange={e => setForm(f => ({ ...f, bodyI18n: { ...f.bodyI18n, [lang.code]: e.target.value } }))} />
+                </div>
+              ))}
+            </div>
+          </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <button className="btn btn-primary" onClick={handleSave}><Save size={14} /> Save</button>
             <button className="btn btn-ghost"   onClick={() => setEditing(null)}>Cancel</button>
@@ -117,6 +147,17 @@ export default function TemplatesPage() {
             <div style={{ fontSize: 10, color: '#cbd5e1', marginTop: 12 }}>
               Updated: {new Date(t.updated_at).toLocaleDateString('en-IN')}
             </div>
+            {(() => {
+              try {
+                const si = t.subject_i18n ? JSON.parse(t.subject_i18n) : {};
+                const langs = Object.keys(si).filter(k => si[k]);
+                return langs.length ? (
+                  <div style={{ fontSize: 10, color: '#0f766e', marginTop: 4 }}>Languages: {langs.join(', ')}</div>
+                ) : null;
+              } catch (_) {
+                return null;
+              }
+            })()}
           </div>
         ))}
       </div>

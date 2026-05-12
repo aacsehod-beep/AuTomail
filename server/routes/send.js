@@ -86,18 +86,31 @@ router.post('/', async (req, res) => {
       });
     }
 
+    // Optional per-student mapped PDF attachments (non-certificate mails)
+    const rawDynAtts = req.files?.dynamicAttachFiles
+      ? (Array.isArray(req.files.dynamicAttachFiles) ? req.files.dynamicAttachFiles : [req.files.dynamicAttachFiles])
+      : [];
+    const invalidDynAtt = rawDynAtts.find(f => !isAllowedPdf(f));
+    if (invalidDynAtt) return res.status(400).json({ error: `Invalid dynamic attachment type: ${invalidDynAtt.name}. Only PDF files are allowed.` });
+    const mappedAttachmentsMap = {};
+    rawDynAtts.forEach(f => {
+      const key = f.name.replace(/\.pdf$/i, '').trim().toLowerCase();
+      mappedAttachmentsMap[key] = { content: f.data.toString('base64'), filename: f.name, type: 'application/pdf' };
+    });
+
     const recipients = (payload.recipients || []).filter(r => parser.isValidEmail(r.email));
     if (!recipients.length) return res.status(400).json({ error: 'No valid recipients' });
 
     const jobId = uuidv4();
     const originalFilename = req.files?.sheet?.name || '';
-    jobManager.createJob({ id: jobId, type, title: payload.title || type, total: recipients.length, payload });
+    const payloadWithMeta = { ...payload, school: req.school || '' };
+    jobManager.createJob({ id: jobId, type, title: payload.title || type, total: recipients.length, payload: payloadWithMeta });
 
     // Respond immediately with job ID — processing happens async
     res.json({ jobId });
 
     // Run send job in background (intentionally not awaited)
-    runJob(jobId, type, payload, recipients, buffer, originalFilename, attachments, certMap, certMatchKey, req.school || '').catch(err => {
+    runJob(jobId, type, payloadWithMeta, recipients, buffer, originalFilename, attachments, certMap, certMatchKey, req.school || '', null, mappedAttachmentsMap).catch(err => {
       jobManager.updateJob(jobId, { status: 'Error: ' + err.message, finished: true });
     });
 
@@ -165,10 +178,12 @@ router.post('/columns', (req, res) => {
 });
 
 // ─── Job Runner ───────────────────────────────────────────────────────────────
-async function runJob(jobId, type, payload, recipients, buffer, originalFilename = '', attachments = [], certMap = {}, certMatchKey = 'regNo', school = '') {
+async function runJob(jobId, type, payload, recipients, buffer, originalFilename = '', attachments = [], certMap = {}, certMatchKey = 'regNo', school = '', resumeState = null, mappedAttachmentsMap = {}) {
   const sender  = process.env.SENDER_EMAIL || 'no-reply@aurora.edu';
   const logRows = [];
-  let sent = 0, failed = 0, done = 0;
+  let sent = resumeState?.sent || 0;
+  let failed = resumeState?.failed || 0;
+  let done = resumeState?.done || 0;
 
   // Group by section for attendance (to load sheet data once per section)
   const bySec = {};
@@ -211,15 +226,58 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
     }
   }
 
+  function pickLocalized(fieldDefault, i18nMap, lang) {
+    if (!lang) return fieldDefault;
+    const key = String(lang).toLowerCase();
+    if (i18nMap && typeof i18nMap === 'object' && i18nMap[key]) return i18nMap[key];
+    return fieldDefault;
+  }
+
+  function inferLanguage(rec, dynEntry) {
+    return (
+      rec?.language || rec?.lang || rec?.preferredLanguage || rec?.preferred_language ||
+      dynEntry?.Language || dynEntry?.language || dynEntry?.Lang || dynEntry?.lang || dynEntry?.preferred_language ||
+      'en'
+    );
+  }
+
+  function buildDynamicAttachments(rec, ctx, dynEntry) {
+    if (!payload.dynamicAttachmentEnabled) return [];
+
+    if (payload.dynamicAttachmentMode === 'mapped') {
+      const keyField = payload.dynamicAttachmentField || 'RegNo';
+      const key = String(dynEntry?.[keyField] || rec?.[keyField] || rec?.regNo || rec?.email || '').trim().toLowerCase();
+      const att = mappedAttachmentsMap[key];
+      return att ? [att] : [];
+    }
+
+    if (payload.dynamicAttachmentMode === 'generated_txt') {
+      const fileTpl = payload.dynamicAttachmentFileName || '{{RegNo}}-notice.txt';
+      const bodyTpl = payload.dynamicAttachmentTemplate || 'Student: {{Name}}\nRegNo: {{RegNo}}\nSection: {{Section}}';
+      const filename = templates.fillTemplate(fileTpl, ctx).replace(/[\\/:*?"<>|]+/g, '_');
+      const content = templates.fillTemplate(bodyTpl, ctx);
+      return [{
+        content: Buffer.from(content, 'utf8').toString('base64'),
+        filename,
+        type: 'text/plain',
+      }];
+    }
+
+    return [];
+  }
+
   const buildMessage = async (rec) => {
     let ctx = { Name: rec.name, Email: rec.email, RegNo: rec.regNo, Section: rec.section };
+    let dynEntry = null;
 
     // Merge per-student dynamic columns from sheet into ctx
     if (dynamicDataMap) {
-      const dynEntry = dynamicDataMap.get(rec.email.toLowerCase());
+      dynEntry = dynamicDataMap.get(rec.email.toLowerCase());
       if (!dynEntry) throw new Error(`Row not found in sheet for: ${rec.email} — check the header row and email column`);
       ctx = { ...dynEntry, ...ctx }; // built-ins (Name/Email/RegNo) override sheet columns of same name
     }
+    const lang = inferLanguage(rec, dynEntry);
+    const perRecipientAttachments = [...attachments, ...buildDynamicAttachments(rec, ctx, dynEntry)];
 
     switch (type) {
       case 'attendance': {
@@ -246,23 +304,26 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
       case 'holiday':
       case 'fee':
       case 'general': {
-        const subjectFilled = templates.fillTemplate(payload.subject || 'Notice from Aurora University', ctx);
+        const localizedSubject = pickLocalized(payload.subject || 'Notice from Aurora University', payload.subjectI18n, lang);
+        const localizedBody = pickLocalized(payload.body || '', payload.bodyI18n, lang);
+        const subjectFilled = templates.fillTemplate(localizedSubject, ctx);
         const { html, text } = templates.renderCircularHtml({
           subject:    subjectFilled,
-          body:       payload.body || '',
+          body:       localizedBody,
           ctx,
           circularNo: payload.circularNo,
           category:   type,
         });
-        return { to: rec.email, toName: rec.name, subject: subjectFilled, html, text, attachments };
+        return { to: rec.email, toName: rec.name, subject: subjectFilled, html, text, attachments: perRecipientAttachments };
       }
 
       case 'custom': {
-        const subjectFilled = templates.fillTemplate(payload.subject || 'Message from Aurora University', ctx);
+        const localizedSubject = pickLocalized(payload.subject || 'Message from Aurora University', payload.subjectI18n, lang);
+        const subjectFilled = templates.fillTemplate(localizedSubject, ctx);
         const { html, text } = templates.renderCustomHtml({
           subject: subjectFilled, htmlBody: payload.htmlBody || '', ctx,
         });
-        return { to: rec.email, toName: rec.name, subject: subjectFilled, html, text, attachments };
+        return { to: rec.email, toName: rec.name, subject: subjectFilled, html, text, attachments: perRecipientAttachments };
       }
 
       case 'fee_reminder': {
@@ -274,12 +335,13 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
           studentFeeDetails = entry.feeDetails;
           if (entry.name && !rec.name) rec = { ...rec, name: entry.name };
         }
-        const subjectFilled = templates.fillTemplate(payload.subject || 'Fee Payment Reminder – {{Name}}', { ...ctx, Name: rec.name });
+        const localizedSubject = pickLocalized(payload.subject || 'Fee Payment Reminder – {{Name}}', payload.subjectI18n, lang);
+        const subjectFilled = templates.fillTemplate(localizedSubject, { ...ctx, Name: rec.name });
         const { html, text } = templates.renderFeeReminderHtml({ ctx: { ...ctx, Name: rec.name }, feeDetails: studentFeeDetails });
         return {
           to: rec.email, toName: rec.name,
           subject: subjectFilled,
-          html, text, attachments,
+          html, text, attachments: perRecipientAttachments,
         };
       }
 
@@ -293,8 +355,10 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
           if (payload.certPerStudent) throw new Error(`No certificate PDF attached for: ${rec.email}`);
           throw new Error(`No certificate PDF found for ${certMatchKey === 'regNo' ? 'Roll No' : 'Name'}: "${lookupKey || '(empty)'}"`);
         }
-        const subjectFilled = templates.fillTemplate(payload.subject || `Your Certificate – ${rec.name}`, ctx);
-        const { html, text } = templates.renderCertificateHtml({ ctx, body: payload.body || '' });
+        const localizedSubject = pickLocalized(payload.subject || `Your Certificate – ${rec.name}`, payload.subjectI18n, lang);
+        const localizedBody = pickLocalized(payload.body || '', payload.bodyI18n, lang);
+        const subjectFilled = templates.fillTemplate(localizedSubject, ctx);
+        const { html, text } = templates.renderCertificateHtml({ ctx, body: localizedBody });
         return {
           to: rec.email, toName: rec.name, subject: subjectFilled, html, text,
           attachments: [certAtt],
@@ -349,6 +413,56 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
   }
 }
 
+async function resumeInterruptedJobs() {
+  const interrupted = jobManager.listInterruptedJobs();
+  if (!interrupted.length) return;
+
+  for (const job of interrupted) {
+    try {
+      const payload = job.payload_json ? JSON.parse(job.payload_json) : null;
+      const recipients = payload?.recipients || [];
+      if (!payload || !recipients.length) {
+        jobManager.updateJob(job.id, { status: 'Failed to resume: missing payload/recipients', finished: true });
+        continue;
+      }
+
+      const done = Number(job.done || 0);
+      if (done >= recipients.length) {
+        jobManager.updateJob(job.id, {
+          sent: Number(job.sent || 0),
+          failed: Number(job.failed || 0),
+          done,
+          status: 'Completed',
+          finished: true,
+        });
+        continue;
+      }
+
+      const remainingRecipients = recipients.slice(done);
+      const school = payload.school || '';
+      jobManager.markResuming(job.id);
+
+      runJob(
+        job.id,
+        payload.type || job.type,
+        payload,
+        remainingRecipients,
+        null,
+        '',
+        [],
+        {},
+        payload.certMatchKey || 'regNo',
+        school,
+        { sent: Number(job.sent || 0), failed: Number(job.failed || 0), done }
+      ).catch(err => {
+        jobManager.updateJob(job.id, { status: 'Error: ' + err.message, finished: true });
+      });
+    } catch (err) {
+      jobManager.updateJob(job.id, { status: 'Error: ' + err.message, finished: true });
+    }
+  }
+}
+
 // POST /api/send/resend/:jobId — re-send to all FAILED recipients of a previous job
 router.post('/resend/:jobId', async (req, res) => {
   try {
@@ -361,7 +475,9 @@ router.post('/resend/:jobId', async (req, res) => {
     if (!payload) return res.status(400).json({ error: 'This job has no saved payload (it may predate this feature). Cannot resend.' });
 
     const { getLogs } = require('../services/logger');
-    const failedRows = getLogs({ jobId, status: 'FAILED', limit: 10000 });
+    const { getSchoolDb } = require('../db');
+    const logDb = getSchoolDb(payload.school || req.school || '');
+    const failedRows = getLogs(logDb, { jobId, status: 'FAILED', limit: 10000 });
     if (!failedRows.length) return res.status(400).json({ error: 'No failed recipients found for this job.' });
 
     // Rebuild recipients from the failed log rows
@@ -390,3 +506,9 @@ router.post('/resend/:jobId', async (req, res) => {
 });
 
 module.exports = router;
+
+setTimeout(() => {
+  resumeInterruptedJobs().catch(err => {
+    console.error('[ResumeJobs] startup resume error:', err.message);
+  });
+}, 1200);

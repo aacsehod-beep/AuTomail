@@ -2,17 +2,17 @@
 import {
   TrendingUp, Mail, CheckCircle2, XCircle, Percent,
   CalendarDays, CalendarRange, Building2, AlertTriangle,
-  BarChart2, Clock, RefreshCw, ArrowRight,
+  BarChart2, Clock, RefreshCw, ArrowRight, Search,
 } from 'lucide-react';
 import { api } from '../api';
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Helpers ---
 function fmtDate(iso) {
-  if (!iso) return 'â€”';
+  if (!iso) return '-';
   return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-// â”€â”€â”€ KPI Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- KPI Card ---
 function KpiCard({ icon: Icon, label, value, sub, color, accent }) {
   const [display, setDisplay] = useState(0);
   const isNum = typeof value === 'number';
@@ -54,7 +54,7 @@ function KpiCard({ icon: Icon, label, value, sub, color, accent }) {
   );
 }
 
-// â”€â”€â”€ Section bar row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Section Bar Row ---
 function SectionRow({ section, sent, failed }) {
   const total = sent + failed;
   const pct   = total > 0 ? Math.round((sent / total) * 100) : 0;
@@ -78,7 +78,7 @@ function SectionRow({ section, sent, failed }) {
   );
 }
 
-// â”€â”€â”€ Trend Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Trend Chart ---
 function TrendChart({ data }) {
   const days = [];
   for (let i = 13; i >= 0; i--) {
@@ -122,7 +122,7 @@ function TrendChart({ data }) {
   );
 }
 
-// â”€â”€â”€ Type badge colors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Type Badge Colors ---
 const TYPE_COLORS = {
   attendance:   { bg: '#dbeafe', color: '#1d4ed8' },
   circular:     { bg: '#fef9c3', color: '#a16207' },
@@ -135,11 +135,15 @@ const TYPE_COLORS = {
   custom:       { bg: '#f0fdf4', color: '#166534' },
 };
 
-// â”€â”€â”€ Main Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export default function StatsPage({ onNavigate, schoolView }) {
+// --- Main Page ---
+export default function StatsPage({ onNavigate, schoolView, onSchoolViewChange }) {
   const [stats,   setStats]   = useState(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState('');
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [historyData, setHistoryData] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
 
   function load() {
     setLoading(true);
@@ -150,7 +154,29 @@ export default function StatsPage({ onNavigate, schoolView }) {
   }
   useEffect(load, [schoolView]);
 
-  if (loading) return <div className="alert alert-info">Loading dashboardâ€¦</div>;
+  async function searchRecipientHistory() {
+    const q = historyQuery.trim();
+    if (q.length < 2) {
+      setHistoryError('Type at least 2 characters.');
+      setHistoryData(null);
+      return;
+    }
+    setHistoryLoading(true);
+    setHistoryError('');
+    try {
+      const params = { q, limit: 200 };
+      if (schoolView) params.schoolFilter = schoolView;
+      const data = await api.getRecipientHistory(params);
+      setHistoryData(data);
+    } catch (e) {
+      setHistoryError(e.message || 'Search failed');
+      setHistoryData(null);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  if (loading) return <div className="alert alert-info">Loading dashboard...</div>;
   if (error)   return <div className="alert alert-error">{error}</div>;
   if (!stats)  return null;
 
@@ -177,6 +203,7 @@ export default function StatsPage({ onNavigate, schoolView }) {
     if (r.status === 'FAILED') typeMap[r.type].failed = r.cnt;
   });
   const typeEntries = Object.entries(typeMap).sort((a, b) => (b[1].sent + b[1].failed) - (a[1].sent + a[1].failed));
+  const schoolBreakdown = (stats.schoolBreakdown || []);
 
   return (
     <div style={{ maxWidth: 1140 }}>
@@ -188,17 +215,25 @@ export default function StatsPage({ onNavigate, schoolView }) {
           </h1>
           <p style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>
             {schoolView
-              ? <><span style={{ background: '#eff6ff', color: '#2563eb', padding: '2px 8px', borderRadius: 12, fontSize: 12, fontWeight: 700 }}>{schoolView}</span> &nbsp;— filtered view</>
-              : 'Aurora University — Email Campaign Overview'}
+              ? <><span style={{ background: '#eff6ff', color: '#2563eb', padding: '2px 8px', borderRadius: 12, fontSize: 12, fontWeight: 700 }}>{schoolView}</span> &nbsp;- filtered view</>
+              : 'Aurora University - Email Campaign Overview'}
           </p>
         </div>
-        <button className="btn btn-ghost" onClick={load}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {schoolView && (
+            <button className="btn btn-ghost" onClick={() => onSchoolViewChange?.(null)}
+              style={{ fontSize: 12 }}>
+              Show All Schools
+            </button>
+          )}
+          <button className="btn btn-ghost" onClick={load}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
-      {/* â”€â”€ Row 1: KPI Cards â”€â”€ */}
+      {/* Row 1: KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 1fr))', gap: 14, marginBottom: 20 }}>
         <KpiCard icon={Mail}         label="Total Emails"   value={stats.total}       color="#2563eb" accent="#eff6ff" />
         <KpiCard icon={CheckCircle2} label="Delivered"      value={stats.sent}        color="#16a34a" accent="#dcfce7" />
@@ -208,7 +243,51 @@ export default function StatsPage({ onNavigate, schoolView }) {
         <KpiCard icon={CalendarRange}label="Sent This Week" value={stats.sentWeek}    color="#0891b2" accent="#e0f2fe" />
       </div>
 
-      {/* â”€â”€ Row 2: Trend + Top Section â”€â”€ */}
+      {/* Superadmin: school-level drill-down */}
+      {schoolBreakdown.length > 0 && !schoolView && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={{ ...sh3, marginBottom: 0 }}><Building2 size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />School Overview (Drill-down)</h3>
+            <div style={{ fontSize: 11, color: '#64748b' }}>Click a school to open its dashboard</div>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>School</th><th>Total</th><th>Sent</th><th>Failed</th><th>Success</th><th>Today</th><th>This Week</th><th>Last Activity</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {schoolBreakdown.map(s => (
+                  <tr key={s.school}>
+                    <td style={{ fontWeight: 700 }}>{s.school}</td>
+                    <td>{s.total}</td>
+                    <td style={{ color: '#16a34a', fontWeight: 700 }}>{s.sent}</td>
+                    <td style={{ color: s.failed > 0 ? '#dc2626' : '#94a3b8', fontWeight: s.failed > 0 ? 700 : 400 }}>{s.failed}</td>
+                    <td>
+                      <span style={{
+                        background: s.successRate >= 90 ? '#dcfce7' : s.successRate >= 70 ? '#fef9c3' : '#fee2e2',
+                        color: s.successRate >= 90 ? '#15803d' : s.successRate >= 70 ? '#92400e' : '#b91c1c',
+                        borderRadius: 6, padding: '2px 8px', fontWeight: 700, fontSize: 12,
+                      }}>{s.successRate}%</span>
+                    </td>
+                    <td>{s.sentToday}</td>
+                    <td>{s.sentWeek}</td>
+                    <td style={{ fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>{fmtDate(s.lastActivityAt)}</td>
+                    <td>
+                      <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => onSchoolViewChange?.(s.school)}>
+                        Drill Down
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Row 2: Trend + Top Section */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 16 }}>
         {/* 14-Day Trend */}
         <div className="card">
@@ -261,7 +340,7 @@ export default function StatsPage({ onNavigate, schoolView }) {
         </div>
       </div>
 
-      {/* â”€â”€ Row 3: By Type + By Section â”€â”€ */}
+      {/* Row 3: By Type + By Section */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
         {/* Mail Type Breakdown */}
         <div className="card">
@@ -301,7 +380,7 @@ export default function StatsPage({ onNavigate, schoolView }) {
         </div>
       </div>
 
-      {/* â”€â”€ Row 4: Recent Jobs â”€â”€ */}
+      {/* Row 4: Recent Jobs */}
       {(stats.recentJobs || []).length > 0 && (
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
@@ -347,6 +426,70 @@ export default function StatsPage({ onNavigate, schoolView }) {
           </div>
         </div>
       )}
+
+      {/* Recipient History */}
+      <div className="card" style={{ marginTop: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <h3 style={{ ...sh3, marginBottom: 0 }}>
+            <Search size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Recipient History View
+          </h3>
+          <div style={{ display: 'flex', gap: 8, width: 'min(560px, 100%)' }}>
+            <input
+              className="form-control"
+              placeholder="Search by email, name, or reg no"
+              value={historyQuery}
+              onChange={e => setHistoryQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') searchRecipientHistory(); }}
+            />
+            <button className="btn btn-outline" onClick={searchRecipientHistory} disabled={historyLoading}>
+              {historyLoading ? 'Searching...' : 'Search'}
+            </button>
+          </div>
+        </div>
+
+        {historyError && <div className="alert alert-error" style={{ marginBottom: 10 }}>{historyError}</div>}
+
+        {historyData?.summary && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 12 }}>
+            <div style={miniCard}><div style={miniLabel}>Total</div><div style={miniVal}>{historyData.summary.total}</div></div>
+            <div style={miniCard}><div style={miniLabel}>Sent</div><div style={{ ...miniVal, color: '#16a34a' }}>{historyData.summary.sent}</div></div>
+            <div style={miniCard}><div style={miniLabel}>Failed</div><div style={{ ...miniVal, color: '#dc2626' }}>{historyData.summary.failed}</div></div>
+            <div style={miniCard}><div style={miniLabel}>Last Sent</div><div style={{ ...miniVal, fontSize: 12 }}>{fmtDate(historyData.summary.lastSentAt)}</div></div>
+          </div>
+        )}
+
+        {!historyLoading && historyData && (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Sent At</th><th>Recipient</th><th>Name</th><th>Reg No</th><th>Type</th><th>Status</th><th>Section</th><th>School</th><th>Job ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(historyData.rows || []).map(r => (
+                  <tr key={`${r.school}-${r.id}`}>
+                    <td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{fmtDate(r.sent_at)}</td>
+                    <td style={{ fontSize: 12 }}>{r.recipient}</td>
+                    <td style={{ fontSize: 12 }}>{r.name || '-'}</td>
+                    <td style={{ fontSize: 12 }}>{r.reg_no || '-'}</td>
+                    <td style={{ fontSize: 12, textTransform: 'capitalize' }}>{r.type}</td>
+                    <td>
+                      <span className={r.status === 'SENT' ? 'badge badge-success' : 'badge badge-danger'}>{r.status}</span>
+                    </td>
+                    <td style={{ fontSize: 12 }}>{r.section || '-'}</td>
+                    <td style={{ fontSize: 12 }}>{r.school || '-'}</td>
+                    <td style={{ fontSize: 11, color: '#64748b' }}>{r.job_id}</td>
+                  </tr>
+                ))}
+                {(!historyData.rows || historyData.rows.length === 0) && (
+                  <tr><td colSpan={9} style={{ color: '#94a3b8', textAlign: 'center' }}>No history found for this recipient.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -354,4 +497,23 @@ export default function StatsPage({ onNavigate, schoolView }) {
 const sh3 = {
   fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 14,
   display: 'flex', alignItems: 'center',
+};
+
+const miniCard = {
+  border: '1px solid #e2e8f0',
+  borderRadius: 10,
+  padding: '8px 10px',
+  background: '#f8fafc',
+};
+
+const miniLabel = {
+  fontSize: 11,
+  color: '#64748b',
+  marginBottom: 4,
+};
+
+const miniVal = {
+  fontSize: 16,
+  fontWeight: 700,
+  color: '#0f172a',
 };

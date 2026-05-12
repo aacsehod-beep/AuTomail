@@ -34,6 +34,21 @@ function getJob(id) {
   return db.prepare('SELECT * FROM jobs WHERE id=?').get([id]);
 }
 
+function listInterruptedJobs() {
+  return db.prepare(`
+    SELECT * FROM jobs
+    WHERE finished = 0
+      AND cancelled = 0
+      AND status NOT IN ('Completed', 'Cancelled')
+    ORDER BY created_at ASC
+  `).all();
+}
+
+function markResuming(id) {
+  db.prepare(`UPDATE jobs SET status='Resuming after restart' WHERE id=?`).run([id]);
+  broadcastProgress(id);
+}
+
 function cancelJob(id) {
   const reg = jobRegistry.get(id);
   if (reg) reg.cancelled = true;
@@ -77,4 +92,5 @@ function cleanupJob(id) {
 module.exports = {
   createJob, updateJob, getJob, cancelJob, isCancelled,
   addSseClient, removeSseClient, broadcastProgress, cleanupJob,
+  listInterruptedJobs, markResuming,
 };

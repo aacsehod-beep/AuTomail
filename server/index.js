@@ -15,6 +15,7 @@ const templatesRouter  = require('./routes/templates');
 const statsRouter      = require('./routes/stats');
 const schedulerRouter  = require('./routes/scheduler');
 const { router: authRouter } = require('./routes/auth');
+const settingsRouter   = require('./routes/settings');
 const requireAuth      = require('./middleware/requireAuth');
 
 const app  = express();
@@ -57,6 +58,7 @@ app.use('/api/logs',       requireAuth, logsRouter);
 app.use('/api/templates',  requireAuth, templatesRouter);
 app.use('/api/stats',      requireAuth, statsRouter);
 app.use('/api/scheduler',  requireAuth, schedulerRouter);
+app.use('/api/settings',   requireAuth, settingsRouter);
 
 // Serve React build
 const clientDist = path.join(__dirname, '..', 'client', 'dist');

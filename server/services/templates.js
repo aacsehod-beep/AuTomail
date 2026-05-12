@@ -157,7 +157,7 @@ function renderCircularHtml({ subject, body, ctx, circularNo, category }) {
     <div style="margin-top:24px;background:#f8fafc;border-radius:8px;padding:12px 16px;font-size:12px;color:#6b7280">
       Addressed to: <strong>${escapeHtml(ctx.Name)}</strong>
       ${ctx.RegNo ? ` &nbsp;|&nbsp; Reg No: <strong>${escapeHtml(ctx.RegNo)}</strong>` : ''}
-      ${ctx.Section ? ` &nbsp;|&nbsp; Section: <strong>${escapeHtml(ctx.Section)}</strong>` : ''}
+      ${ctx.Section && ctx.Section.toLowerCase() !== 'emails' && ctx.Section.toLowerCase() !== 'email' ? ` &nbsp;|&nbsp; Section: <strong>${escapeHtml(ctx.Section)}</strong>` : ''}
     </div>` : ''}
   `;
 

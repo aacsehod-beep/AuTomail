@@ -1,6 +1,15 @@
 const router = require('express').Router();
-const { getStats, getAggregatedStats } = require('../services/logger');
+const { getStats } = require('../services/logger');
 const { getSchoolDb, getAllSchoolDbs } = require('../db');
+
+function resolveSchoolName(db, fallback = '') {
+  try {
+    const row = db.prepare(`SELECT value FROM school_meta WHERE key='school_name'`).get();
+    return row?.value || fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
 
 // GET /api/stats
 router.get('/', (req, res) => {
@@ -47,7 +56,10 @@ router.get('/', (req, res) => {
     if (allDbs.length === 0) {
       return res.json({ total: 0, sent: 0, failed: 0, successRate: 0, byType: [], recentCampaigns: [], bySec: [], trend: [], sentToday: 0, sentWeek: 0, topSection: null, topFailed: [], recentJobs: [] });
     }
-    const results = allDbs.map(({ db }) => querySchoolStats(db));
+    const results = allDbs.map(({ slug, db }) => ({
+      school: resolveSchoolName(db, slug),
+      ...querySchoolStats(db),
+    }));
     const merged = results.reduce((acc, r) => {
       acc.total      += r.total;
       acc.sent       += r.sent;
@@ -57,6 +69,16 @@ router.get('/', (req, res) => {
       acc.bySec.push(...r.bySec);
       acc.topFailed.push(...r.topFailed);
       acc.recentJobs.push(...r.recentJobs);
+      acc.schoolBreakdown.push({
+        school: r.school,
+        total: r.total,
+        sent: r.sent,
+        failed: r.failed,
+        successRate: r.successRate,
+        sentToday: r.sentToday,
+        sentWeek: r.sentWeek,
+        lastActivityAt: r.recentJobs?.[0]?.started_at || null,
+      });
       for (const row of r.byType) {
         const key = `${row.type}|${row.status}`;
         acc._byTypeMap[key] = acc._byTypeMap[key] || { type: row.type, status: row.status, cnt: 0 };
@@ -68,13 +90,15 @@ router.get('/', (req, res) => {
         acc._trendMap[row.day].failed += row.failed;
       }
       return acc;
-    }, { total: 0, sent: 0, failed: 0, sentToday: 0, sentWeek: 0, bySec: [], topFailed: [], recentJobs: [], _byTypeMap: {}, _trendMap: {} });
+    }, { total: 0, sent: 0, failed: 0, sentToday: 0, sentWeek: 0, bySec: [], topFailed: [], recentJobs: [], schoolBreakdown: [], _byTypeMap: {}, _trendMap: {} });
 
     merged.successRate    = merged.total > 0 ? Math.round((merged.sent / merged.total) * 100) : 0;
     merged.byType         = Object.values(merged._byTypeMap);
     merged.trend          = Object.values(merged._trendMap).sort((a, b) => a.day.localeCompare(b.day));
     merged.recentJobs     = merged.recentJobs.sort((a, b) => (b.started_at || '').localeCompare(a.started_at || '')).slice(0, 5);
     merged.topFailed      = merged.topFailed.sort((a, b) => b.cnt - a.cnt).slice(0, 5);
+    merged.schoolBreakdown = merged.schoolBreakdown
+      .sort((a, b) => b.total - a.total);
     merged.recentCampaigns = [];
     merged.topSection     = null;
     delete merged._byTypeMap;

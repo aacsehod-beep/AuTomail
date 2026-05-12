@@ -34,11 +34,13 @@ export const api = {
   getJob:        (id)             => req('GET',  `/send/job/${id}`),
   cancelJob:     (id)             => req('POST', `/send/cancel/${id}`),
   getLogs:       (params = {})    => req('GET',  '/logs?' + new URLSearchParams(params)),
+  getRecipientHistory: (params = {}) => req('GET', '/logs/recipient-history?' + new URLSearchParams(params)),
   clearLogs:     ()               => req('DELETE', '/logs'),
   getColumns:    (form)           => req('POST', '/send/columns', form, true),
   getStats:      (school)         => req('GET',  '/stats' + (school ? '?schoolFilter=' + encodeURIComponent(school) : '')),
   getTemplates:  ()               => req('GET',  '/templates'),
   saveTemplate:  (t)              => req('POST', '/templates', t),
+  suggestContent:(p)              => req('POST', '/templates/suggest-content', p),
   deleteTemplate:(id)             => req('DELETE', `/templates/${id}`),
   getScheduled:  ()               => req('GET',  '/scheduler'),
   createSchedule:(s)              => req('POST', '/scheduler', s),
@@ -49,6 +51,8 @@ export const api = {
   deleteUser:    (id)             => req('DELETE', `/auth/users/${id}`),
   resetPassword: (id, password)   => req('PUT', `/auth/users/${id}/password`, { password }),
   getSchools:    ()               => req('GET',  '/auth/schools'),
+  getSettings:   ()               => req('GET',  '/settings'),
+  updateSettings:(key, value)     => req('PUT',  '/settings', { key, value }),
 };
 
 export function sseProgress(jobId, onData, onDone) {

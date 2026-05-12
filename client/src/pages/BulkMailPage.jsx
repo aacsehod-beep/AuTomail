@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { api, sseProgress } from '../api';
-import { Mail, Loader2, Send, Users, Save, Paperclip, X, FileText, Award, ChevronDown, ChevronUp, IndianRupee } from 'lucide-react';
+import { Mail, Loader2, Send, Users, Save, Paperclip, X, FileText, Award, ChevronDown, ChevronUp, IndianRupee, Sparkles } from 'lucide-react';
 import FileUpload      from '../components/FileUpload';
 import SectionSelector from '../components/SectionSelector';
 import ProgressPanel   from '../components/ProgressPanel';
@@ -42,6 +42,17 @@ export default function BulkMailPage() {
   const [subject,      setSubject]      = useState('');
   const [body,         setBody]         = useState('');
   const [htmlBody,     setHtmlBody]     = useState('');
+  const [supportedLangs,   setSupportedLangs]   = useState([{ code: 'hi', label: 'Hindi' }, { code: 'ta', label: 'Tamil' }]);
+  const [subjectI18n,      setSubjectI18n]      = useState({});
+  const [bodyI18n,         setBodyI18n]         = useState({});
+  const [recipientLangOverrides, setRecipientLangOverrides] = useState({});
+  const [suggestingContent, setSuggestingContent] = useState(false);
+  const [dynamicAttachEnabled, setDynamicAttachEnabled] = useState(false);
+  const [dynamicAttachMode, setDynamicAttachMode] = useState('mapped'); // mapped | generated_txt
+  const [dynamicAttachField, setDynamicAttachField] = useState('RegNo');
+  const [dynamicAttachTemplate, setDynamicAttachTemplate] = useState('Student: {{Name}}\nRegNo: {{RegNo}}\nSection: {{Section}}\n');
+  const [dynamicAttachFileName, setDynamicAttachFileName] = useState('{{RegNo}}-notice.txt');
+  const [dynamicAttachFiles, setDynamicAttachFiles] = useState([]);
   const [circularNo,   setCircularNo]   = useState('');
   const [feeDetails,   setFeeDetails]   = useState([{ label: '', amount: '', dueDate: '', overdue: false }]);
   const [feeMapping,   setFeeMapping]   = useState(DEFAULT_FEE_MAPPING);
@@ -68,7 +79,12 @@ export default function BulkMailPage() {
 
   useEffect(() => {
     api.getTemplates().then(setTemplates).catch(() => {});
+    api.getSettings().then(s => {
+      if (Array.isArray(s.languages) && s.languages.length) setSupportedLangs(s.languages);
+    }).catch(() => {});
   }, []);
+
+
 
   async function handleFile(f) {
     setFile(f); setSections([]); setSelected([]); setRecipients([]); setSheetColumns([]); setError('');
@@ -130,6 +146,34 @@ export default function BulkMailPage() {
 
   function removeAttachment(name) {
     setAttachments(prev => prev.filter(f => f.name !== name));
+  }
+
+  function handleDynamicAttachFiles(e) {
+    const incoming = Array.from(e.target.files || []).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+    setDynamicAttachFiles(prev => {
+      const names = new Set(prev.map(f => f.name));
+      return [...prev, ...incoming.filter(f => !names.has(f.name))];
+    });
+    e.target.value = '';
+  }
+
+  function removeDynamicAttach(name) {
+    setDynamicAttachFiles(prev => prev.filter(f => f.name !== name));
+  }
+
+  async function suggestContentAi() {
+    setSuggestingContent(true);
+    setError('');
+    try {
+      const data = await api.suggestContent({ type: mailType, body, htmlBody, language: 'en' });
+      if (data.subject) setSubject(data.subject);
+      if (data.body) setBody(data.body);
+      showToast(`Content suggested (${data.provider || 'local'})`, 'success');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSuggestingContent(false);
+    }
   }
 
   function handleCertFiles(e) {
@@ -209,8 +253,13 @@ export default function BulkMailPage() {
     try {
       const payload = {
         type: mailType, subject, body, htmlBody,
+        subjectI18n: {},
+        bodyI18n: {},
         circularNo, feeDetails,
-        recipients: toSend, mapping,
+        recipients: toSend.map(r => {
+          const override = recipientLangOverrides[r.email];
+          return override ? { ...r, language: override } : r;
+        }), mapping,
         certMatchKey,
         certPerStudent: mailType === 'certificate' && certAttachMode === 'manual',
         certIndexMap: mailType === 'certificate' && certAttachMode === 'manual'
@@ -222,11 +271,20 @@ export default function BulkMailPage() {
         // Dynamic column placeholders from sheet
         useSheetData: useSheetData && !!file,
         dynamicMapping: useSheetData ? { headerRow: 1, startRow: 2, nameCol: mapping.nameCol, emailCol: mapping.emailCol } : undefined,
+        // Dynamic per-student attachments
+        dynamicAttachmentEnabled: dynamicAttachEnabled,
+        dynamicAttachmentMode: dynamicAttachMode,
+        dynamicAttachmentField: dynamicAttachField,
+        dynamicAttachmentTemplate: dynamicAttachTemplate,
+        dynamicAttachmentFileName: dynamicAttachFileName,
       };
       const form = new FormData();
       if (file) form.append('sheet', file);
       attachments.forEach(f => form.append('attachments', f));
       certFiles.forEach(f => form.append('certFiles', f));
+      if (dynamicAttachEnabled && dynamicAttachMode === 'mapped') {
+        dynamicAttachFiles.forEach(f => form.append('dynamicAttachFiles', f));
+      }
       // Per-student cert files: append as certFile_${index}
       if (mailType === 'certificate' && certAttachMode === 'manual') {
         toSend.forEach((r, i) => {
@@ -260,7 +318,14 @@ export default function BulkMailPage() {
     const name = prompt('Template name:');
     if (!name) return;
     try {
-      await api.saveTemplate({ name, type: mailType, subject, body });
+      await api.saveTemplate({
+        name,
+        type: mailType,
+        subject,
+        body,
+        subjectI18n: {},
+        bodyI18n: {},
+      });
       const ts = await api.getTemplates(); setTemplates(ts);
     } catch (e) { setError(e.message); }
   }
@@ -321,7 +386,12 @@ export default function BulkMailPage() {
         {mailType !== 'certificate' && (
           <div style={{ display: 'grid', gridTemplateColumns: circularNo !== undefined ? '1fr auto' : '1fr', gap: 14, marginBottom: 14 }}>
             <div className="form-group">
-              <label className="form-label">Subject <span style={{ color: '#dc2626' }}>*</span></label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <label className="form-label" style={{ marginBottom: 6 }}>Subject <span style={{ color: '#dc2626' }}>*</span></label>
+                <button type="button" className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px' }} onClick={suggestContentAi} disabled={suggestingContent}>
+                  {suggestingContent ? <><Loader2 size={12} className="spin" /> Suggesting…</> : <><Sparkles size={12} /> AI Suggest</>}
+                </button>
+              </div>
               <input className="form-control" value={subject} onChange={e => setSubject(e.target.value)}
                 placeholder="e.g., Important Notice – {{Name}}" />
               <span style={{ fontSize: 11, color: '#94a3b8' }}>
@@ -336,6 +406,8 @@ export default function BulkMailPage() {
             </div>
           </div>
         )}
+
+
 
         {/* ── Dynamic column placeholders panel ── */}
         {mailType !== 'attendance' && file && (
@@ -417,6 +489,67 @@ export default function BulkMailPage() {
           style={{ display: 'none' }} onChange={handleCertFiles} />
         <input ref={perCertRef} type="file" accept=".pdf,application/pdf"
           style={{ display: 'none' }} onChange={handlePerCertPick} />
+
+        {/* ── Dynamic per-student attachments ── */}
+        {mailType !== 'certificate' && (
+          <div style={{ marginTop: 14, background: dynamicAttachEnabled ? '#eff6ff' : '#f8fafc', border: '1px solid ' + (dynamicAttachEnabled ? '#bfdbfe' : '#e2e8f0'), borderRadius: 10, padding: '12px 16px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 600, fontSize: 13, color: '#1e3a8a', userSelect: 'none', marginBottom: dynamicAttachEnabled ? 10 : 0 }}>
+              <input type="checkbox" checked={dynamicAttachEnabled} onChange={e => setDynamicAttachEnabled(e.target.checked)}
+                style={{ width: 16, height: 16, accentColor: '#2563eb', cursor: 'pointer' }} />
+              Dynamic attachments per student
+            </label>
+            {dynamicAttachEnabled && (
+              <div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                  <button type="button" onClick={() => setDynamicAttachMode('mapped')} style={{ padding: '6px 12px', borderRadius: 8, border: `2px solid ${dynamicAttachMode === 'mapped' ? '#2563eb' : '#e2e8f0'}`, background: dynamicAttachMode === 'mapped' ? '#eff6ff' : '#fff', color: dynamicAttachMode === 'mapped' ? '#1d4ed8' : '#64748b', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>Map Uploaded PDFs</button>
+                  <button type="button" onClick={() => setDynamicAttachMode('generated_txt')} style={{ padding: '6px 12px', borderRadius: 8, border: `2px solid ${dynamicAttachMode === 'generated_txt' ? '#2563eb' : '#e2e8f0'}`, background: dynamicAttachMode === 'generated_txt' ? '#eff6ff' : '#fff', color: dynamicAttachMode === 'generated_txt' ? '#1d4ed8' : '#64748b', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>Generate TXT per student</button>
+                </div>
+
+                {dynamicAttachMode === 'mapped' ? (
+                  <>
+                    <div className="form-group" style={{ marginBottom: 8 }}>
+                      <label className="form-label">Match by field</label>
+                      <select className="form-control" value={dynamicAttachField} onChange={e => setDynamicAttachField(e.target.value)}>
+                        <option value="RegNo">RegNo</option>
+                        <option value="Name">Name</option>
+                        <option value="Email">Email</option>
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, color: '#64748b' }}>Upload PDFs named by selected field (e.g. 21AU001.pdf)</div>
+                      <label className="btn btn-ghost" style={{ fontSize: 11, padding: '5px 12px', cursor: 'pointer' }}>
+                        <Paperclip size={12} /> Add Dynamic PDFs
+                        <input type="file" accept=".pdf,application/pdf" multiple style={{ display: 'none' }} onChange={handleDynamicAttachFiles} />
+                      </label>
+                    </div>
+                    {dynamicAttachFiles.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {dynamicAttachFiles.map(f => (
+                          <div key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', border: '1px solid #dbeafe', borderRadius: 8, padding: '6px 10px' }}>
+                            <FileText size={13} style={{ color: '#dc2626' }} />
+                            <span style={{ flex: 1, fontSize: 12 }}>{f.name}</span>
+                            <button type="button" onClick={() => removeDynamicAttach(f.name)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X size={13} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="form-group" style={{ marginBottom: 8 }}>
+                      <label className="form-label">Generated filename template</label>
+                      <input className="form-control" value={dynamicAttachFileName} onChange={e => setDynamicAttachFileName(e.target.value)} placeholder="{{RegNo}}-notice.txt" />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">Generated text template</label>
+                      <textarea className="form-control" style={{ minHeight: 90 }} value={dynamicAttachTemplate} onChange={e => setDynamicAttachTemplate(e.target.value)} />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Common Attachments (not shown in certificate mode) ── */}
         {mailType !== 'certificate' && (
@@ -511,6 +644,7 @@ export default function BulkMailPage() {
                           onChange={toggleAllRecipients} />
                       </th>
                       <th>Name</th><th>Email</th><th>Reg No</th><th>Section</th>
+                      {enableMultilingual && supportedLangs.length > 0 && <th style={{ minWidth: 110 }}>Language</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -526,6 +660,18 @@ export default function BulkMailPage() {
                           <td style={{ color: '#64748b' }}>{r.email}</td>
                           <td>{r.regNo}</td>
                           <td><span className="badge badge-info">{r.section}</span></td>
+                          {enableMultilingual && supportedLangs.length > 0 && (
+                            <td onClick={e => e.stopPropagation()}>
+                              <select
+                                value={recipientLangOverrides[r.email] || ''}
+                                onChange={e => setRecipientLangOverrides(prev => ({ ...prev, [r.email]: e.target.value || undefined }))}
+                                style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid #cbd5e1', background: recipientLangOverrides[r.email] ? '#ecfeff' : '#f8fafc', color: '#0e7490', width: '100%' }}
+                              >
+                                <option value="">auto / en</option>
+                                {supportedLangs.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+                              </select>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}

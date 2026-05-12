@@ -9,6 +9,7 @@ import StatsPage        from './pages/StatsPage';
 import TemplatesPage    from './pages/TemplatesPage';
 import SchedulerPage    from './pages/SchedulerPage';
 import UsersPage        from './pages/UsersPage';
+import SettingsPage     from './pages/SettingsPage';
 import { api } from './api';
 
 const PAGES = {
@@ -19,6 +20,7 @@ const PAGES = {
   templates:  TemplatesPage,
   scheduler:  SchedulerPage,
   users:      UsersPage,
+  settings:   SettingsPage,
 };
 
 export default function App() {
@@ -90,7 +92,7 @@ export default function App() {
       />
       <main style={{ flex: 1, padding: '28px', overflowY: 'auto', maxWidth: '100%' }}>
         <div key={page} className="page-fade">
-          <Page onNavigate={setPage} schoolView={schoolView} />
+          <Page onNavigate={setPage} schoolView={schoolView} onSchoolViewChange={setSchoolView} />
         </div>
       </main>
       <ToastContainer />
