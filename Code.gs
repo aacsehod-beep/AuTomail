@@ -34,9 +34,37 @@ function doGet() {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
-function ping() { 
-  return true; 
+/**
+ * Mail Relay — called by the Node.js server on Render.
+ * POST body (JSON): { to, toName, subject, html, text }
+ * Returns JSON: { success: true } or { success: false, error: "..." }
+ */
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const { to, toName, subject, html, text } = data;
+
+    if (!to || !subject) {
+      return jsonResponse_({ success: false, error: 'Missing required fields: to, subject' });
+    }
+
+    GmailApp.sendEmail(to, subject, text || subject, {
+      name: CONFIG.DEFAULT_SENDER_NAME,
+      htmlBody: html || text || subject,
+    });
+
+    return jsonResponse_({ success: true });
+  } catch (err) {
+    return jsonResponse_({ success: false, error: err.message });
+  }
 }
+
+function jsonResponse_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+
 
 // ---------- Sections & Recipients ----------
 function listSections(sheetId) {

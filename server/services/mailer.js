@@ -1,43 +1,52 @@
-const sgMail = require('@sendgrid/mail');
+const https = require('https');
 
-const FROM_EMAIL = process.env.SENDER_EMAIL || 'no-reply@aurora.edu';
-const FROM_NAME  = process.env.SENDER_NAME  || 'Aurora University';
-
-// Initialise SendGrid with API key
-if (process.env.SENDGRID_API_KEY) {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-}
+const FROM_NAME = process.env.SENDER_NAME || 'Aurora University';
 
 /**
- * Send a single email via SendGrid.
- * Returns { success: true } or throws.
+ * Send a single email via Google Apps Script relay.
+ * GAS runs on Google servers — no SMTP, no IPv6 issues.
  */
-async function sendOne({ to, toName, subject, html, text, attachments = [], replyTo }) {
-  if (!process.env.SENDGRID_API_KEY) {
-    throw new Error('SENDGRID_API_KEY is not set. Please add it in Render environment variables.');
+async function sendOne({ to, toName, subject, html, text }) {
+  const gasUrl = process.env.GAS_MAIL_URL;
+  if (!gasUrl) {
+    throw new Error('GAS_MAIL_URL is not set. Deploy the GAS web app and add its URL to Render environment variables.');
   }
 
-  const msg = {
-    from:    { name: FROM_NAME, email: FROM_EMAIL },
-    to:      toName ? { name: toName, email: to } : to,
-    subject,
-    html,
-    text:    text || subject,
-  };
+  const body = JSON.stringify({ to, toName, subject, html, text: text || subject });
 
-  if (replyTo) msg.replyTo = replyTo;
+  return new Promise((resolve, reject) => {
+    const url = new URL(gasUrl);
+    const options = {
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    };
 
-  if (attachments.length) {
-    msg.attachments = attachments.map(att => ({
-      content:     att.content,           // already base64
-      filename:    att.filename,
-      type:        att.type || 'application/octet-stream',
-      disposition: 'attachment',
-    }));
-  }
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.success) resolve({ success: true });
+          else reject(new Error(json.error || 'GAS relay failed'));
+        } catch {
+          // GAS sometimes returns redirect HTML — treat 2xx as success
+          if (res.statusCode >= 200 && res.statusCode < 400) resolve({ success: true });
+          else reject(new Error(`GAS relay HTTP ${res.statusCode}`));
+        }
+      });
+    });
 
-  await sgMail.send(msg);
-  return { success: true };
+    req.on('error', reject);
+    req.setTimeout(30000, () => { req.destroy(); reject(new Error('GAS relay timeout')); });
+    req.write(body);
+    req.end();
+  });
 }
 
 /**
