@@ -3,6 +3,7 @@
  * Dispatches them via the same send pipeline used by the /api/send route.
  */
 const db         = require('../db');
+const { getAllSchoolDbs } = require('../db');
 const mailer     = require('./mailer');
 const templates  = require('./templates');
 const { logBatch } = require('./logger');
@@ -13,9 +14,14 @@ const CHECK_INTERVAL = 60_000; // 1 minute
 function start() {
   // Reset any jobs stuck in 'running' state from a previous crashed process
   try {
-    const reset = db.prepare(`UPDATE scheduled_jobs SET status='pending' WHERE status='running'`);
-    const { changes } = reset.run([]);
-    if (changes > 0) console.log(`[Scheduler] Reset ${changes} stuck 'running' job(s) to 'pending'`);
+    let totalReset = 0;
+    for (const { db } of getAllSchoolDbs()) {
+      try {
+        const { changes } = db.prepare(`UPDATE scheduled_jobs SET status='pending' WHERE status='running'`).run([]);
+        totalReset += changes;
+      } catch (_) {}
+    }
+    if (totalReset > 0) console.log(`[Scheduler] Reset ${totalReset} stuck 'running' job(s) to 'pending'`);
   } catch (e) {
     console.error('[Scheduler] Failed to reset stuck jobs:', e.message);
   }
@@ -27,29 +33,28 @@ function start() {
 }
 
 async function checkDue() {
-  let due;
-  try {
-    due = db.prepare(`
-      SELECT * FROM scheduled_jobs
-      WHERE status = 'pending' AND run_at <= datetime('now')
-      LIMIT 10
-    `).all();
-  } catch (e) {
-    return;
-  }
+  const schoolDbs = getAllSchoolDbs();
+  for (const { slug, db } of schoolDbs) {
+    let due;
+    try {
+      due = db.prepare(`
+        SELECT * FROM scheduled_jobs
+        WHERE status = 'pending' AND run_at <= datetime('now')
+        LIMIT 10
+      `).all();
+    } catch (e) { continue; }
 
-  for (const job of due) {
-    // Mark it as running so it doesn't get picked up twice
-    db.prepare(`UPDATE scheduled_jobs SET status='running' WHERE id=?`).run([job.id]);
+    for (const job of due) {
+      db.prepare(`UPDATE scheduled_jobs SET status='running' WHERE id=?`).run([job.id]);
 
     try {
       const payload = JSON.parse(job.payload || '{}');
       const recipients = payload.recipients || [];
 
       if (!recipients.length) {
-        db.prepare(`UPDATE scheduled_jobs SET status='failed' WHERE id=?`).run([job.id]);
-        console.warn(`[Scheduler] Job #${job.id} skipped — no recipients stored in payload`);
-        continue;
+          db.prepare(`UPDATE scheduled_jobs SET status='failed' WHERE id=?`).run([job.id]);
+          console.warn(`[Scheduler][${slug}] Job #${job.id} skipped — no recipients stored in payload`);
+          continue;
       }
 
       const sender = process.env.SENDER_EMAIL || 'no-reply@aurora.edu';
@@ -71,12 +76,12 @@ async function checkDue() {
           sent++;
           logRows.push({ jobId: `sched-${job.id}`, type: job.type, recipient: rec.email,
             name: rec.name, regNo: rec.regNo, section: rec.section,
-            status: 'SENT', message: 'Scheduled send', sender });
+            status: 'SENT', message: 'Scheduled send', sender, school: slug });
         } catch (err) {
           failed++;
           logRows.push({ jobId: `sched-${job.id}`, type: job.type, recipient: rec.email,
             name: rec.name, regNo: rec.regNo, section: rec.section,
-            status: 'FAILED', message: err.message, sender });
+            status: 'FAILED', message: err.message, sender, school: slug });
         }
       }
 
@@ -84,11 +89,12 @@ async function checkDue() {
       db.prepare(`UPDATE scheduled_jobs SET status=? WHERE id=?`).run(
         [failed === recipients.length ? 'failed' : 'sent', job.id]
       );
-      console.log(`[Scheduler] Job #${job.id} done — sent:${sent} failed:${failed}`);
+      console.log(`[Scheduler][${slug}] Job #${job.id} done — sent:${sent} failed:${failed}`);
 
     } catch (err) {
       db.prepare(`UPDATE scheduled_jobs SET status='failed' WHERE id=?`).run([job.id]);
-      console.error(`[Scheduler] Job #${job.id} error:`, err.message);
+      console.error(`[Scheduler][${slug}] Job #${job.id} error:`, err.message);
+      } // end for schoolDbs
     }
   }
 }

@@ -1,8 +1,9 @@
 const router = require('express').Router();
-const db     = require('../db');
+const { getSchoolDb } = require('../db');
 
 // GET /api/templates
 router.get('/', (req, res) => {
+  const db = getSchoolDb(req.school);
   const rows = db.prepare('SELECT * FROM templates ORDER BY updated_at DESC').all();
   res.json(rows);
 });
@@ -13,6 +14,7 @@ router.post('/', (req, res) => {
     const { name, type, subject, body } = req.body;
     if (!name || !type || !subject || !body) return res.status(400).json({ error: 'Missing fields' });
     const now = new Date().toISOString();
+    const db = getSchoolDb(req.school);
     db.prepare(`
       INSERT INTO templates (name, type, subject, body, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -28,6 +30,7 @@ router.post('/', (req, res) => {
 
 // DELETE /api/templates/:id
 router.delete('/:id', (req, res) => {
+  const db = getSchoolDb(req.school);
   db.prepare('DELETE FROM templates WHERE id=?').run([req.params.id]);
   res.json({ ok: true });
 });

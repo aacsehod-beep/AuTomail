@@ -34,13 +34,21 @@ export const api = {
   getJob:        (id)             => req('GET',  `/send/job/${id}`),
   cancelJob:     (id)             => req('POST', `/send/cancel/${id}`),
   getLogs:       (params = {})    => req('GET',  '/logs?' + new URLSearchParams(params)),
-  getStats:      ()               => req('GET',  '/stats'),
+  clearLogs:     ()               => req('DELETE', '/logs'),
+  getColumns:    (form)           => req('POST', '/send/columns', form, true),
+  getStats:      (school)         => req('GET',  '/stats' + (school ? '?schoolFilter=' + encodeURIComponent(school) : '')),
   getTemplates:  ()               => req('GET',  '/templates'),
   saveTemplate:  (t)              => req('POST', '/templates', t),
   deleteTemplate:(id)             => req('DELETE', `/templates/${id}`),
   getScheduled:  ()               => req('GET',  '/scheduler'),
   createSchedule:(s)              => req('POST', '/scheduler', s),
   deleteSchedule:(id)             => req('DELETE', `/scheduler/${id}`),
+  // User management (superadmin only)
+  getUsers:      ()               => req('GET',  '/auth/users'),
+  createUser:    (u)              => req('POST', '/auth/users', u),
+  deleteUser:    (id)             => req('DELETE', `/auth/users/${id}`),
+  resetPassword: (id, password)   => req('PUT', `/auth/users/${id}/password`, { password }),
+  getSchools:    ()               => req('GET',  '/auth/schools'),
 };
 
 export function sseProgress(jobId, onData, onDone) {

@@ -20,9 +20,11 @@ export default function LoginPage({ onLogin }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Login failed.');
-      sessionStorage.setItem('au_token', data.token);
-      sessionStorage.setItem('au_user',  data.user);
-      onLogin(data.token, data.user);
+      sessionStorage.setItem('au_token',  data.token);
+      sessionStorage.setItem('au_user',   data.user);
+      sessionStorage.setItem('au_school', data.school || '');
+      sessionStorage.setItem('au_role',   data.role   || 'admin');
+      onLogin(data.token, data.user, data.school || '', data.role || 'admin');
     } catch (err) {
       setError(err.message);
     } finally {

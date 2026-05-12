@@ -115,14 +115,28 @@ function loadAttendanceData(buffer, displaySection, mapping = {}, originalFilena
   const subjNames = layout.map(s => String(headerRow[s.nameCol - 1] || '').trim());
 
   // Rows from startRow onwards — student data
+  // We load EVERY row with a valid email — if subject data looks empty/malformed we
+  // still store the student but flag them so the sender can log a clear error instead
+  // of silently skipping them.
   const students = {};
   for (let r = startRow - 1; r < grid.length; r++) {
     const row   = grid[r];
-    const email = String(row[idxEmail] || '').trim().toLowerCase();
-    if (!email || !isValidEmail(email)) continue;
+    const rawEmail = String(row[idxEmail] || '').trim();
+    const email    = rawEmail.toLowerCase();
+    if (!email) continue;
 
     const name  = String(row[idxName] || '').trim();
     const regNo = String(row[2]       || '').trim();
+
+    if (!isValidEmail(email)) {
+      // Store with a parse error so the mailer can report it properly
+      students[email] = {
+        name, regNo, subjects: [],
+        parseError: `Invalid email format in sheet: "${rawEmail}"`,
+      };
+      continue;
+    }
+
     const subjectsData = layout.map((s, i) => ({
       name:     subjNames[i] || `Subject ${i + 1}`,
       percent:  toNumber(row[s.pctCol - 1]),
@@ -130,7 +144,13 @@ function loadAttendanceData(buffer, displaySection, mapping = {}, originalFilena
       attended: toNumber(row[s.attendedCol - 1]),
     }));
 
-    students[email] = { name, regNo, subjects: subjectsData };
+    // Flag if ALL subjects have zero held — likely a formatting/blank row issue
+    const allZero = subjectsData.every(s => s.held === 0 && s.attended === 0 && s.percent === 0);
+
+    students[email] = {
+      name, regNo, subjects: subjectsData,
+      parseError: allZero ? 'Attendance data appears empty or malformed for this row — check spacing/formatting in the sheet' : null,
+    };
   }
 
   return { weekInfo, subjects: subjNames, students };
@@ -232,12 +252,75 @@ function loadFeeData(buffer, originalFilename, feeMapping = {}) {
   return result;
 }
 
+/**
+ * Load dynamic column data from the sheet for use as {{placeholders}} in templates.
+ * mapping: { headerRow, startRow, nameCol, emailCol }
+ *   headerRow: row number with column headers (default 1)
+ *   startRow : first data row (default 2)
+ *   nameCol  : 1-based column index for name
+ *   emailCol : 1-based column index for email
+ *
+ * Returns:
+ *   { headers: string[], dataMap: Map<email, { colHeader: value, ... }> }
+ */
+function loadDynamicData(buffer, sections, mapping = {}, originalFilename) {
+  const { wb, map } = readWorkbook(buffer, originalFilename);
+  const headerRow = Number(mapping.headerRow || 1);
+  const startRow  = Number(mapping.startRow  || 2);
+  const nameCol   = Number(mapping.nameCol   || DEFAULT_NAME_COL);
+  const emailCol  = Number(mapping.emailCol  || DEFAULT_EMAIL_COL);
+  const idxName   = nameCol  - 1;
+  const idxEmail  = emailCol - 1;
+
+  const allHeaders = new Set();
+  const dataMap    = new Map(); // email → { colHeader: value }
+
+  const targetSections = sections && sections.length ? sections : Object.keys(map);
+
+  targetSections.forEach(displaySec => {
+    const actualSec = map[displaySec] || displaySec;
+    const ws = wb.Sheets[actualSec];
+    if (!ws) return;
+
+    const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    if (grid.length < headerRow) return;
+
+    // Read header row — skip empty cells
+    const headers = (grid[headerRow - 1] || []).map(h => String(h || '').trim());
+
+    // Collect non-empty header names
+    headers.forEach(h => { if (h) allHeaders.add(h); });
+
+    for (let r = startRow - 1; r < grid.length; r++) {
+      const row   = grid[r];
+      const email = String(row[idxEmail] || '').trim().toLowerCase();
+      if (!email || !isValidEmail(email)) continue;
+
+      const entry = {};
+      headers.forEach((h, i) => {
+        if (!h) return;
+        const val = row[i];
+        entry[h] = val !== undefined && val !== null ? String(val).trim() : '';
+      });
+
+      // Built-in aliases for common column names → always available
+      if (!entry.Name  && row[idxName])  entry.Name  = String(row[idxName]).trim();
+      if (!entry.Email)                  entry.Email = email;
+
+      dataMap.set(email, entry);
+    }
+  });
+
+  return { headers: [...allHeaders], dataMap };
+}
+
 module.exports = {
   listSections,
   loadRecipients,
   loadAttendanceData,
   filterBelowThreshold,
   loadFeeData,
+  loadDynamicData,
   isValidEmail,
   SUBJECT_COLS,
   PERCENT_COLS,

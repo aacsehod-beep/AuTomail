@@ -1,37 +1,64 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ClipboardList, Download, RefreshCw } from 'lucide-react';
+import { ClipboardList, Download, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { api } from '../api';
 import { showToast } from '../components/Toast';
 
 const STATUS_COLORS = { SENT: 'badge-success', FAILED: 'badge-danger' };
 
-export default function LogsPage() {
+// Today's date as YYYY-MM-DD for the date input default max
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+export default function LogsPage({ schoolView }) {
   const [rows,    setRows]    = useState([]);
   const [total,   setTotal]   = useState(0);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
-  const [filters, setFilters] = useState({ type: '', status: '', section: '', jobId: '', search: '' });
-  const [page,    setPage]    = useState(0);
+  const [clearing, setClearing] = useState(false);
+  const [filters, setFilters] = useState({
+    type: '', status: '', section: '', jobId: '', search: '',
+    dateFrom: '', dateTo: '',
+  });
+  const [page, setPage] = useState(0);
   const LIMIT = 25;
 
   const load = useCallback(async (pg = 0) => {
     setLoading(true); setError('');
     try {
       const params = { ...filters, limit: LIMIT, offset: pg * LIMIT };
+      if (schoolView) params.schoolFilter = schoolView;
       Object.keys(params).forEach(k => { if (!params[k]) delete params[k]; });
       const data = await api.getLogs(params);
       setRows(data.rows); setTotal(data.total); setPage(pg);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
-  }, [filters]);
+  }, [filters, schoolView]);
 
   useEffect(() => { load(0); }, [load]);
 
-  function handleExport() {
-    const params = new URLSearchParams();
-    if (filters.type)   params.set('type',   filters.type);
-    if (filters.status) params.set('status', filters.status);
-    window.open('/api/logs/export?' + params.toString(), '_blank');
+  async function handleExport() {
+    try {
+      const params = new URLSearchParams();
+      if (filters.type)     params.set('type',     filters.type);
+      if (filters.status)   params.set('status',   filters.status);
+      if (filters.section)  params.set('section',  filters.section);
+      if (filters.jobId)    params.set('jobId',    filters.jobId);
+      if (filters.search)   params.set('search',   filters.search);
+      if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
+      if (filters.dateTo)   params.set('dateTo',   filters.dateTo);
+      if (schoolView)       params.set('schoolFilter', schoolView);
+      const token = sessionStorage.getItem('au_token') || '';
+      const res = await fetch('/api/logs/export?' + params.toString(), {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) { showToast('Export failed: ' + res.status, 'error'); return; }
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `aurora-logs-${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { showToast('Export failed: ' + e.message, 'error'); }
   }
 
   async function handleResend() {
@@ -43,14 +70,37 @@ export default function LogsPage() {
     }
   }
 
-  const hasFailed = rows.some(r => r.status === 'FAILED');
+  function clearFilters() {
+    setFilters({ type: '', status: '', section: '', jobId: '', search: '', dateFrom: '', dateTo: '' });
+  }
+
+  async function handleClearLogs() {
+    if (!window.confirm('Delete ALL email logs? This cannot be undone.')) return;
+    setClearing(true);
+    try {
+      await api.clearLogs();
+      showToast('All email logs deleted.', 'success');
+      load(0);
+    } catch (e) {
+      showToast('Failed to clear logs: ' + e.message, 'error');
+    } finally {
+      setClearing(false);
+    }
+  }
+
+  const hasFilters = Object.values(filters).some(v => v !== '');
+  const hasFailed  = rows.some(r => r.status === 'FAILED');
 
   return (
     <div style={{ maxWidth: 1100 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><ClipboardList size={20} /> Email Logs</h1>
-          <p style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>Full send history — {total} total records</p>
+          <p style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>
+            {schoolView
+              ? <><span style={{ background: '#eff6ff', color: '#2563eb', padding: '2px 8px', borderRadius: 12, fontSize: 12, fontWeight: 700 }}>{schoolView}</span> &nbsp;— {total} records</>
+              : `Full send history — ${total} total records`}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {hasFailed && (
@@ -62,13 +112,47 @@ export default function LogsPage() {
             </button>
           )}
           <button className="btn btn-outline" onClick={handleExport}><Download size={14} /> Export CSV</button>
+          <button className="btn btn-outline" onClick={handleClearLogs} disabled={clearing || total === 0}
+            style={{ color: '#ef4444', borderColor: '#ef4444', opacity: total === 0 ? 0.45 : 1 }}
+            title="Delete all email logs">
+            <Trash2 size={14} /> {clearing ? 'Clearing…' : 'Clear All Logs'}
+          </button>
         </div>
       </div>
 
       {/* Filters */}
       <div className="card" style={{ marginBottom: 18 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-          <div className="form-group">
+        {/* Row 1 — Date range + Search */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr auto', gap: 12, marginBottom: 12, alignItems: 'flex-end' }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">From Date</label>
+            <input type="date" className="form-control" max={todayStr()} value={filters.dateFrom}
+              onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">To Date</label>
+            <input type="date" className="form-control" max={todayStr()} value={filters.dateTo}
+              onChange={e => setFilters(f => ({ ...f, dateTo: e.target.value }))} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Search</label>
+            <div style={{ position: 'relative' }}>
+              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
+              <input className="form-control" placeholder="Name or email…" value={filters.search}
+                style={{ paddingLeft: 32 }}
+                onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} />
+            </div>
+          </div>
+          {hasFilters && (
+            <button className="btn btn-ghost" onClick={clearFilters} title="Clear all filters"
+              style={{ padding: '8px 12px', color: '#64748b', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <X size={14} /> Clear
+            </button>
+          )}
+        </div>
+        {/* Row 2 — Type / Status / Section / Job ID */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+          <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Type</label>
             <select className="form-control" value={filters.type} onChange={e => setFilters(f => ({ ...f, type: e.target.value }))}>
               <option value="">All Types</option>
@@ -77,7 +161,7 @@ export default function LogsPage() {
               ))}
             </select>
           </div>
-          <div className="form-group">
+          <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Status</label>
             <select className="form-control" value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
               <option value="">All</option>
@@ -85,20 +169,15 @@ export default function LogsPage() {
               <option value="FAILED">Failed</option>
             </select>
           </div>
-          <div className="form-group">
+          <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Section</label>
             <input className="form-control" placeholder="e.g. CSE-A" value={filters.section}
               onChange={e => setFilters(f => ({ ...f, section: e.target.value }))} />
           </div>
-          <div className="form-group">
+          <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Job ID</label>
             <input className="form-control" placeholder="uuid…" value={filters.jobId}
               onChange={e => setFilters(f => ({ ...f, jobId: e.target.value }))} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Search</label>
-            <input className="form-control" placeholder="Name or email…" value={filters.search}
-              onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} />
           </div>
         </div>
       </div>

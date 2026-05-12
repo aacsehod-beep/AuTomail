@@ -97,7 +97,7 @@ router.post('/', async (req, res) => {
     res.json({ jobId });
 
     // Run send job in background (intentionally not awaited)
-    runJob(jobId, type, payload, recipients, buffer, originalFilename, attachments, certMap, certMatchKey).catch(err => {
+    runJob(jobId, type, payload, recipients, buffer, originalFilename, attachments, certMap, certMatchKey, req.school || '').catch(err => {
       jobManager.updateJob(jobId, { status: 'Error: ' + err.message, finished: true });
     });
 
@@ -141,8 +141,31 @@ router.post('/cancel/:jobId', (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/send/columns — detect column headers from an uploaded sheet
+// Returns { headers: string[] } so the frontend can show available {{placeholders}}
+router.post('/columns', (req, res) => {
+  try {
+    const sheetFile = req.files?.sheet || null;
+    if (!sheetFile) return res.status(400).json({ error: 'No sheet uploaded' });
+    if (!isAllowedSheet(sheetFile)) return res.status(400).json({ error: 'Invalid sheet type' });
+    const rawPayload = req.body.mapping || '{}';
+    let mapping = {};
+    try { mapping = JSON.parse(rawPayload); } catch (_) {}
+    const { headers } = parser.loadDynamicData(
+      sheetFile.data,
+      null,
+      mapping,
+      sheetFile.name,
+    );
+    res.json({ headers });
+  } catch (err) {
+    console.error('[POST /api/send/columns] error:', err);
+    res.status(500).json({ error: 'An internal error occurred.' });
+  }
+});
+
 // ─── Job Runner ───────────────────────────────────────────────────────────────
-async function runJob(jobId, type, payload, recipients, buffer, originalFilename = '', attachments = [], certMap = {}, certMatchKey = 'regNo') {
+async function runJob(jobId, type, payload, recipients, buffer, originalFilename = '', attachments = [], certMap = {}, certMatchKey = 'regNo', school = '') {
   const sender  = process.env.SENDER_EMAIL || 'no-reply@aurora.edu';
   const logRows = [];
   let sent = 0, failed = 0, done = 0;
@@ -175,15 +198,36 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
     }
   }
 
+  // Pre-load dynamic column data for template placeholders (all bulk types)
+  let dynamicDataMap = null; // Map<email, { colHeader: value }>
+  const BULK_TYPES = new Set(['circular','announcement','event','exam','holiday','fee','general','custom','certificate','fee_reminder']);
+  if (payload.useSheetData && buffer && BULK_TYPES.has(type)) {
+    try {
+      const sections = [...new Set(recipients.map(r => r.section))];
+      const result = parser.loadDynamicData(buffer, sections, payload.dynamicMapping || payload.mapping || {}, originalFilename);
+      dynamicDataMap = result.dataMap;
+    } catch (e) {
+      console.error('[runJob] loadDynamicData error:', e.message);
+    }
+  }
+
   const buildMessage = async (rec) => {
-    const ctx = { Name: rec.name, Email: rec.email, RegNo: rec.regNo, Section: rec.section };
+    let ctx = { Name: rec.name, Email: rec.email, RegNo: rec.regNo, Section: rec.section };
+
+    // Merge per-student dynamic columns from sheet into ctx
+    if (dynamicDataMap) {
+      const dynEntry = dynamicDataMap.get(rec.email.toLowerCase());
+      if (!dynEntry) throw new Error(`Row not found in sheet for: ${rec.email} — check the header row and email column`);
+      ctx = { ...dynEntry, ...ctx }; // built-ins (Name/Email/RegNo) override sheet columns of same name
+    }
 
     switch (type) {
       case 'attendance': {
         const data = attendanceCache[rec.section];
         if (!data) throw new Error(`No sheet data for section ${rec.section}`);
         const student = data.students[rec.email.toLowerCase()];
-        if (!student) throw new Error('No attendance record found for this student');
+        if (!student) throw new Error('Student not found in the uploaded sheet — check email column mapping');
+        if (student.parseError) throw new Error(student.parseError);
         ctx.WeekInfo = data.weekInfo;
         const { html, text } = templates.renderAttendanceHtml({
           ctx, subjects: student.subjects, threshold: payload.threshold || THRESHOLD,
@@ -271,12 +315,12 @@ async function runJob(jobId, type, payload, recipients, buffer, originalFilename
     if (result.success) {
       sent++;
       logRows.push({ jobId, type, recipient: result.email, name: rec?.name, regNo: rec?.regNo,
-                     section: rec?.section, status: 'SENT', message: 'Delivered', sender });
+                     section: rec?.section, status: 'SENT', message: 'Delivered', sender, school });
     } else {
       failed++;
       console.error(`[runJob FAIL] email=${result.email} error=${result.error}`);
       logRows.push({ jobId, type, recipient: result.email, name: rec?.name, regNo: rec?.regNo,
-                     section: rec?.section, status: 'FAILED', message: result.error, sender });
+                     section: rec?.section, status: 'FAILED', message: result.error, sender, school });
     }
 
     // Batch-write logs every 20 rows

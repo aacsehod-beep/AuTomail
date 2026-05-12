@@ -1,6 +1,6 @@
-import { BarChart2, Send, TrendingUp, ClipboardList, FileText, Clock, GraduationCap, LogOut, User, ChevronLeft, ChevronRight, Sun, Moon } from 'lucide-react';
+import { BarChart2, Send, TrendingUp, ClipboardList, FileText, Clock, GraduationCap, LogOut, User, ChevronLeft, ChevronRight, Sun, Moon, Users, Globe } from 'lucide-react';
 
-export default function Sidebar({ current, onNavigate, user, onLogout, collapsed, onToggleCollapse, darkMode, onToggleDark }) {
+export default function Sidebar({ current, onNavigate, user, school, role, schoolView, schools, onSchoolViewChange, onLogout, collapsed, onToggleCollapse, darkMode, onToggleDark }) {
   const NAV = [
     { id: 'attendance', Icon: BarChart2,     label: 'Attendance Mail',  desc: 'Send per-student reports'   },
     { id: 'bulk',       Icon: Send,          label: 'Bulk Mailer',      desc: 'Circulars, notices & more'  },
@@ -8,6 +8,7 @@ export default function Sidebar({ current, onNavigate, user, onLogout, collapsed
     { id: 'logs',       Icon: ClipboardList, label: 'Email Logs',       desc: 'Full send history'          },
     { id: 'templates',  Icon: FileText,      label: 'Templates',        desc: 'Save reusable templates'    },
     { id: 'scheduler',  Icon: Clock,         label: 'Scheduler',        desc: 'Schedule future sends'      },
+    ...(role === 'superadmin' ? [{ id: 'users', Icon: Users, label: 'Manage Users', desc: 'Add / remove school admins' }] : []),
   ];
 
   return (
@@ -63,6 +64,39 @@ export default function Sidebar({ current, onNavigate, user, onLogout, collapsed
         })}
       </nav>
 
+      {/* School Switcher — superadmin only, hidden when collapsed */}
+      {role === 'superadmin' && !collapsed && schools.length > 0 && (
+        <div style={{ borderTop: '1px solid #1e293b', padding: '10px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5 }}>
+            <Globe size={11} color="#475569" />
+            <span style={{ color: '#475569', fontSize: 10, fontWeight: 600, letterSpacing: '0.4px', textTransform: 'uppercase' }}>Viewing School</span>
+          </div>
+          <select
+            value={schoolView || ''}
+            onChange={e => onSchoolViewChange(e.target.value || null)}
+            style={{
+              width: '100%', padding: '6px 8px', borderRadius: 6,
+              background: '#1e293b', border: '1px solid #334155',
+              color: schoolView ? '#93c5fd' : '#64748b',
+              fontSize: 12, cursor: 'pointer', outline: 'none',
+            }}
+          >
+            <option value="">All Schools</option>
+            {schools.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          {schoolView && (
+            <button
+              onClick={() => onSchoolViewChange(null)}
+              style={{ marginTop: 4, width: '100%', padding: '3px 0', background: 'none', border: 'none', color: '#475569', fontSize: 10, cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Clear — show all
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Dark mode toggle */}
       <div style={{ borderTop: '1px solid #1e293b', padding: '8px', display: 'flex', justifyContent: 'center' }}>
         <button onClick={onToggleDark} title={darkMode ? 'Light mode' : 'Dark mode'} style={{
@@ -102,7 +136,10 @@ export default function Sidebar({ current, onNavigate, user, onLogout, collapsed
             </div>
             <div style={{ overflow: 'hidden' }}>
               <div style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user || 'admin'}</div>
-              <div style={{ color: '#475569', fontSize: 10 }}>Staff</div>
+              <div style={{ color: '#475569', fontSize: 10 }}>{school || 'Aurora University'}</div>
+              {role === 'superadmin' && (
+                <div style={{ color: '#fbbf24', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', marginTop: 1 }}>SUPER ADMIN</div>
+              )}
             </div>
           </div>
           <button onClick={onLogout} style={{

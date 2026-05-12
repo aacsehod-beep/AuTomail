@@ -6,7 +6,7 @@
  *  - Send Attendance or Circular emails
  *  - Dynamic recipient loading by section
  *  - Progress & cancel support with batch processing
- *  - Centralized Logs Sheet (shared)
+ *  - Centralized Logst Sheet (shared)
  *  - Export Logs (CSV)
  *  - Attendance threshold filtering
  *  - Email statistics & analytics

@@ -14,7 +14,6 @@ const MAIL_TYPES = [
   { id: 'exam',         label: 'Exam Notice',        color: '#991b1b' },
   { id: 'holiday',      label: 'Holiday Notice',     color: '#5b21b6' },
   { id: 'fee',          label: 'Fee Reminder',       color: '#9a3412' },
-  { id: 'fee_reminder', label: 'Fee Due Alert',      color: '#7c3aed' },
   { id: 'general',      label: 'General',            color: '#374151' },
   { id: 'custom',       label: 'Custom HTML',        color: '#0e7490' },
   { id: 'certificate',  label: '🎓 Certificate Mail', color: '#0f766e' },
@@ -54,6 +53,8 @@ export default function BulkMailPage() {
   const [certMatchKey,   setCertMatchKey]   = useState('regNo');
   const [certAttachMode, setCertAttachMode] = useState('auto');   // 'auto' | 'manual'
   const [perCertMap,     setPerCertMap]     = useState({});       // email → File
+  const [sheetColumns,  setSheetColumns]  = useState([]);      // column headers detected from sheet
+  const [useSheetData, setUseSheetData]  = useState(false);   // enable dynamic placeholders
   const [job,          setJob]          = useState(null);
   const [loading,      setLoading]      = useState('');
   const [error,        setError]        = useState('');
@@ -70,13 +71,21 @@ export default function BulkMailPage() {
   }, []);
 
   async function handleFile(f) {
-    setFile(f); setSections([]); setSelected([]); setRecipients([]); setError('');
+    setFile(f); setSections([]); setSelected([]); setRecipients([]); setSheetColumns([]); setError('');
     setLoading('Loading sections…');
     try {
       const form = new FormData();
       form.append('sheet', f);
       const { sections: secs } = await api.listSections(form);
       setSections(secs); setSelected(secs);
+      // Auto-detect column headers for dynamic placeholders (best-effort)
+      try {
+        const form2 = new FormData();
+        form2.append('sheet', f);
+        form2.append('mapping', JSON.stringify({ headerRow: 1, startRow: 2 }));
+        const { headers } = await api.getColumns(form2);
+        setSheetColumns(headers || []);
+      } catch (_) {}
     } catch (e) { setError(e.message); }
     finally { setLoading(''); }
   }
@@ -207,9 +216,12 @@ export default function BulkMailPage() {
         certIndexMap: mailType === 'certificate' && certAttachMode === 'manual'
           ? Object.fromEntries(toSend.map((r, i) => [r.email, i]))
           : undefined,
-        // fee_reminder from Excel — pass the mapping so server can parse per-student fees
-        feeMapping: mailType === 'fee_reminder' ? feeMapping : undefined,
-        feeFromExcel: mailType === 'fee_reminder' && file ? true : false,
+        // fee_reminder from Excel — removed (fee_reminder type no longer used)
+        feeMapping: undefined,
+        feeFromExcel: false,
+        // Dynamic column placeholders from sheet
+        useSheetData: useSheetData && !!file,
+        dynamicMapping: useSheetData ? { headerRow: 1, startRow: 2, nameCol: mapping.nameCol, emailCol: mapping.emailCol } : undefined,
       };
       const form = new FormData();
       if (file) form.append('sheet', file);
@@ -271,7 +283,12 @@ export default function BulkMailPage() {
         <h3 style={sh3}>Step 1 — Choose Mail Type</h3>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {MAIL_TYPES.map(t => (
-            <button key={t.id} onClick={() => setMailType(t.id)} style={{
+            <button key={t.id} onClick={() => {
+              if (t.id !== mailType) {
+                setMailType(t.id);
+                setFile(null); setSections([]); setSelected([]); setRecipients([]); setCheckedEmails(new Set()); setSheetColumns([]); setUseSheetData(false); setError('');
+              }
+            }} style={{
               padding: '7px 14px', borderRadius: 8, border: `2px solid ${mailType === t.id ? t.color : '#e2e8f0'}`,
               background: mailType === t.id ? t.color : '#f8fafc',
               color: mailType === t.id ? '#fff' : t.color,
@@ -301,14 +318,15 @@ export default function BulkMailPage() {
           </div>
         </div>
 
-        {mailType !== 'fee_reminder' && mailType !== 'certificate' && (
+        {mailType !== 'certificate' && (
           <div style={{ display: 'grid', gridTemplateColumns: circularNo !== undefined ? '1fr auto' : '1fr', gap: 14, marginBottom: 14 }}>
             <div className="form-group">
               <label className="form-label">Subject <span style={{ color: '#dc2626' }}>*</span></label>
               <input className="form-control" value={subject} onChange={e => setSubject(e.target.value)}
                 placeholder="e.g., Important Notice – {{Name}}" />
               <span style={{ fontSize: 11, color: '#94a3b8' }}>
-                Use &#123;&#123;Name&#125;&#125;, &#123;&#123;RegNo&#125;&#125;, &#123;&#123;Section&#125;&#125; for personalisation
+                Always available: &#123;&#123;Name&#125;&#125;, &#123;&#123;RegNo&#125;&#125;, &#123;&#123;Section&#125;&#125;
+                {useSheetData && sheetColumns.length > 0 && ' + sheet columns below'}
               </span>
             </div>
             <div className="form-group" style={{ minWidth: 160 }}>
@@ -316,6 +334,51 @@ export default function BulkMailPage() {
               <input className="form-control" value={circularNo} onChange={e => setCircularNo(e.target.value)}
                 placeholder="AU/2026/001" />
             </div>
+          </div>
+        )}
+
+        {/* ── Dynamic column placeholders panel ── */}
+        {mailType !== 'attendance' && file && (
+          <div style={{ marginBottom: 16, background: useSheetData ? '#eff6ff' : '#f8fafc', border: '1px solid ' + (useSheetData ? '#bfdbfe' : '#e2e8f0'), borderRadius: 10, padding: '12px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: useSheetData && sheetColumns.length ? 10 : 0 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 600, fontSize: 13, color: '#1e3a8a', userSelect: 'none' }}>
+                <input type="checkbox" checked={useSheetData} onChange={e => setUseSheetData(e.target.checked)}
+                  style={{ width: 16, height: 16, accentColor: '#2563eb', cursor: 'pointer' }} />
+                Use column data from sheet as placeholders
+              </label>
+              {!useSheetData && <span style={{ fontSize: 11, color: '#94a3b8' }}>Enable to use {'{{FeeAmount}}'}, {'{{DueDate}}'}, etc. from your sheet</span>}
+            </div>
+            {useSheetData && sheetColumns.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, color: '#1d4ed8', fontWeight: 600, marginBottom: 6 }}>
+                  Click a column to insert it as a placeholder into subject/body:
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {['Name','RegNo','Section','Email'].map(k => (
+                    <button key={k} type="button" title={`Insert {{${k}}}`}
+                      onClick={() => setBody(b => b + `{{${k}}}`)}
+                      style={{ background:'#dbeafe', color:'#1d4ed8', border:'none', borderRadius:6, padding:'3px 10px', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                      {`{{${k}}}`}
+                    </button>
+                  ))}
+                  {sheetColumns.filter(h => !['Name','RegNo','Section','Email','name','reg_no','email','section'].includes(h)).map(col => (
+                    <button key={col} type="button" title={`Insert {{${col}}}`}
+                      onClick={() => setBody(b => b + `{{${col}}}`)}
+                      style={{ background:'#f0fdf4', color:'#15803d', border:'1px solid #bbf7d0', borderRadius:6, padding:'3px 10px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                      {`{{${col}}}`}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 10, color: '#64748b', marginTop: 8 }}>
+                  💡 Blue = always available &nbsp;|&nbsp; Green = from your sheet header row
+                </div>
+              </div>
+            )}
+            {useSheetData && sheetColumns.length === 0 && (
+              <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                ⚠ No columns detected — make sure your sheet has headers in row 1
+              </div>
+            )}
           </div>
         )}
 
@@ -340,12 +403,6 @@ export default function BulkMailPage() {
               value={htmlBody} onChange={e => setHtmlBody(e.target.value)}
               placeholder="<p>Dear {{Name}},</p><p>Your custom HTML…</p>" />
           </div>
-        ) : mailType === 'fee_reminder' ? (
-          <FeeEditor rows={feeDetails} onChange={setFeeDetails} onRowChange={updateFeeRow}
-            subject={subject} onSubject={setSubject}
-            feeMapping={feeMapping} onFeeMapping={setFeeMapping}
-            showAdvanced={showFeeAdvanced} onToggleAdvanced={() => setShowFeeAdvanced(v => !v)}
-            hasFile={!!file} />
         ) : (
           <div className="form-group">
             <label className="form-label">Body</label>
